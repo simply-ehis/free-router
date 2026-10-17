@@ -5,7 +5,6 @@
 One self-hosted OpenAI-compatible router. Every free model behind a single gateway key — no per-model signups, no per-model keys needed.
 
 [![Tests](https://img.shields.io/badge/tests-187%2F187-green)](https://github.com/simply-ehis/free-router)
-[![Live](https://img.shields.io/badge/live-free--router.reethym.workers.dev-blue)](https://free-router.reethym.workers.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## What it is
@@ -14,15 +13,33 @@ One self-hosted OpenAI-compatible router. Every free model behind a single gatew
 
 **Zero-config free models work out of the box** — Zen, Kilo, OVH, and LLM7 serve free models with no account and no credit card. Add your own keys for OpenRouter, NVIDIA, Qwen, Cerebras, HuggingFace, Gemini, Groq, Kluster.ai, and Z.AI to expand the pool.
 
-## Live demo
+## Private deployment
 
-The router is running live at **https://free-router.reethym.workers.dev** (Cloudflare Workers, scale-to-zero).
+Deploy to your own Cloudflare Workers instance (or run locally). The live endpoint is **private** — share only your client API key with trusted users, not the URL itself.
 
-Create a client API key at `https://free-router.reethym.workers.dev/` → Security → create key, then point any OpenAI-compatible client at:
+Deploy:
 
-- **Base URL:** `https://free-router.reethym.workers.dev/v1`
-- **API Key:** your client key (created in the dashboard)
-- **Model:** any id from `/v1/models` (e.g. `Meta-Llama-3_3-70B-Instruct`, `big-pickle`)
+```powershell
+npm install
+npx cf auth login
+npx cf secret put GATEWAY_KEY        # dashboard password
+npx cf secret put COMPAT_CREDENTIALS_KEY  # 32 random bytes base64url
+npx cf deploy
+```
+
+Then add provider keys from the dashboard (Providers page) or via env vars:
+
+```powershell
+$env:FREE_ROUTER_OPENROUTER_KEYS="sk-or-v1-..."
+$env:FREE_ROUTER_NVIDIA_KEYS="nvapi-..."
+$env:FREE_ROUTER_QWEN_KEYS="sk-ws-..."
+```
+
+Connect any OpenAI-compatible client to your deployed endpoint:
+
+- **Base URL:** `https://your-worker.reethym.workers.dev/v1`
+- **API Key:** your client key from the dashboard (create one under Security)
+- **Model:** any id from `GET /v1/models`
 
 ## Providers in the pool
 
