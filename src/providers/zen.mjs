@@ -128,11 +128,15 @@ export async function listModelIds(cfg, { signal } = {}) {
   return (json.data ?? []).map((m) => m.id).filter(Boolean);
 }
 
-// Free rule for Zen: official "-free" suffix, or models.dev cost == 0/0.
+// Free rule for Zen: official "-free" suffix, known-free stealth models
+// (big-pickle, test, etc. don't end in -free but are free), or models.dev
+// cost == 0/0. Paid claude/gpt/gemini models must NOT match here even if
+// models.dev temporarily lists them as $0 — they require valid credentials.
 // freeTable: { [modelId]: true } precomputed from models.dev (may be null when offline).
+const ZEN_FREE_STEALTH = new Set(['big-pickle', 'test']);
 export function freeSources(modelId, freeTable) {
   const sources = [];
-  if (modelId.endsWith('-free')) sources.push('suffix');
+  if (modelId.endsWith('-free') || ZEN_FREE_STEALTH.has(modelId)) sources.push('suffix');
   if (freeTable?.[modelId]) sources.push('models.dev');
   return sources;
 }

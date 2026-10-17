@@ -124,6 +124,21 @@ test('openrouter: free detection picks :free + zero-priced, never paid', async (
   assert.deepEqual(byId.openrouter.freeSources('org/free-a:free', null), ['suffix', 'zero-priced']);
   assert.deepEqual(byId.openrouter.freeSources('org/stealth-c', null), ['zero-priced']);
   assert.deepEqual(byId.openrouter.freeSources('org/paid-b', null), []);
+
+test('zen: free detection catches -free suffix + stealth free models (big-pickle, test)', () => {
+  const cfg = makeCfg();
+  cfg.providers.zen = { enabled: true, keys: [], importOpencodeAuth: false, baseUrl: '' };
+  validateConfig(cfg);
+  // -free suffix models
+  assert.deepEqual(byId.zen.freeSources('beam-free', null), ['suffix']);
+  assert.deepEqual(byId.zen.freeSources('mimo-v2.6-flash-free', null), ['suffix']);
+  // stealth free models that don't end in -free
+  assert.deepEqual(byId.zen.freeSources('big-pickle', null), ['suffix']);
+  assert.deepEqual(byId.zen.freeSources('test', null), ['suffix']);
+  // paid claude models are NOT free
+  assert.deepEqual(byId.zen.freeSources('claude-opus-4-5', null), []);
+  assert.deepEqual(byId.zen.freeSources('claude-haiku-4-5', null), []);
+});
 });
 
 test('groq + gemini: free-tier source for all listed models', async () => {
