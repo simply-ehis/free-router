@@ -1,0 +1,21 @@
+#!/usr/bin/env pwsh
+# Pre-commit gate: lint + type + format. On failure, optionally auto-fix.
+# Feeds the autofix flow (#5). Edit the checks to match this repo's stack.
+$ErrorActionPreference = 'Continue'
+
+$checks = @(
+  # '<lint command, e.g. ruff check .>',
+  # '<type command, e.g. mypy .>'
+)
+$bad = $false
+foreach ($c in $checks) {
+  Write-Host "pre-commit: $c"
+  Invoke-Expression $c
+  if ($LASTEXITCODE -ne 0) { $bad = $true }
+}
+
+if ($bad) {
+  Write-Host "`npre-commit FAILED. Run bin/autofix.ps1 -Command '<lint>' to auto-fix, then re-stage."
+  exit 1
+}
+Write-Host "pre-commit OK."

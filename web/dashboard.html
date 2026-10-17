@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>free-router · Cloud</title>
+<link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+<div id="login">
+  <div class="box">
+    <h1>free-router</h1>
+    <p>Enter the dashboard password configured for this router.</p>
+    <form id="loginForm" onsubmit="return false;">
+      <input type="password" id="loginPassword" placeholder="dashboard password" autocomplete="current-password" autofocus>
+      <button id="loginBtn" style="width:100%;margin-top:8px">connect</button>
+    </form>
+    <div class="err" id="loginErr"></div>
+  </div>
+</div>
+
+<header>
+  <span class="dot" id="dot"></span>
+  <h1 id="title">free-router</h1>
+  <span class="muted" id="meta"></span>
+  <span style="flex:1"></span>
+  <select id="strategy" title="routing strategy"></select>
+  <button id="refreshBtn" title="re-list every provider now">refresh catalog</button>
+  <button id="logoutBtn">lock</button>
+</header>
+
+<nav id="tabs" aria-label="dashboard pages">
+  <button data-tab="overview" class="active">overview</button>
+  <button data-tab="playground">playground</button>
+  <button data-tab="models">models</button>
+  <button data-tab="providers">providers</button>
+  <button data-tab="analytics">analytics</button>
+  <button data-tab="security">security</button>
+  <button data-tab="settings">settings</button>
+</nav>
+
+<main>
+  <section class="page active" data-page="overview">
+    <section class="wide">
+      <h2>Status</h2>
+      <div class="cards" id="cards"></div>
+    </section>
+    <section class="wide">
+      <h2>API endpoints</h2>
+      <div class="cards">
+        <div class="card endpoint"><span>OpenAI compatible base URL</span><code id="openaiEndpoint"></code><button data-copy="openai">copy</button></div>
+        <div class="card endpoint"><span>Anthropic Messages endpoint</span><code id="anthropicEndpoint"></code><button data-copy="anthropic">copy</button></div>
+      </div>
+      <div class="muted">Use a client API key with your provider. Create and revoke client keys in Security below.</div>
+    </section>
+    <section>
+      <h2>Providers</h2>
+      <table><thead><tr><th>provider</th><th>keys</th><th></th></tr></thead>
+      <tbody id="providersSummary"></tbody></table>
+    </section>
+    <section>
+      <h2>Probe</h2>
+      <div class="cards" id="probeCards"></div>
+      <div class="muted">Unhealthy models are probed for revival; healthy standbys stay pre-warmed.</div>
+    </section>
+  </section>
+
+  <section class="page" data-page="playground">
+    <section class="wide">
+      <h2>Playground</h2>
+      <div class="toolbar">
+        <select id="pgModel" title="model to talk to"><option value="auto">auto — router decides</option></select>
+        <input id="pgSystem" type="text" placeholder="system prompt (optional — applies to every turn)">
+        <label class="toolbar-label" title="temperature">temp <input id="pgTemp" type="number" min="0" max="2" step="0.1" value="0.7"></label>
+        <input id="pgMaxTokens" type="number" min="1" step="64" placeholder="max tokens">
+        <label><input type="checkbox" id="pgStream" checked> stream</label>
+        <button id="pgClear">clear</button>
+      </div>
+      <div id="pgChat" class="chat" aria-live="polite"></div>
+      <div class="pg-composer toolbar">
+        <textarea id="pgInput" rows="2" placeholder="message the router — Enter sends, Shift+Enter newline"></textarea>
+        <div class="pg-buttons">
+          <button id="pgSend">send</button>
+          <button id="pgStop" class="danger hidden">stop</button>
+          <button id="pgRegen" class="hidden">regenerate</button>
+        </div>
+      </div>
+      <div class="muted">Dashboard session — no client key needed; every turn is attributed to 'playground' in Analytics. Auto routes by strategy; pin a model to force it.</div>
+    </section>
+  </section>
+
+  <section class="page" data-page="models">
+    <section class="wide">
+      <h2>Model viewer</h2>
+      <div class="toolbar">
+        <input id="modelFilter" type="text" placeholder="filter by model or provider">
+        <label><input type="checkbox" id="freeOnly"> free only</label>
+        <select id="providerFilter" title="provider filter"><option value="all">all providers</option></select>
+        <select id="sortModels" title="sort order">
+          <option value="score">sort: score</option>
+          <option value="traffic">sort: traffic</option>
+          <option value="ms">sort: latency</option>
+          <option value="model">sort: name</option>
+          <option value="provider">sort: provider</option>
+        </select>
+        <span class="muted" id="modelCount"></span>
+      </div>
+      <table><thead><tr>
+        <th class="sortable" data-sort="model">model</th>
+        <th class="sortable" data-sort="provider">provider</th>
+        <th class="sortable" data-sort="score">score</th>
+        <th>state</th>
+        <th class="sortable" data-sort="traffic">ok/fail</th>
+        <th class="sortable" data-sort="ms">ms</th>
+        <th>actions</th>
+      </tr></thead>
+      <tbody id="routes"></tbody></table>
+      <div class="muted" id="tryResult" aria-live="polite"></div>
+    </section>
+  </section>
+
+  <section class="page" data-page="providers">
+    <section>
+      <h2>Providers</h2>
+      <div class="toolbar"><button id="testAllBtn" title="minimal authenticated ping per enabled provider — never persisted">test all keys</button><span class="muted">keys never leave the server · masked everywhere · stored encrypted on Cloudflare</span></div>
+      <table><thead><tr><th>provider</th><th>keys</th><th></th></tr></thead>
+      <tbody id="providers"></tbody></table>
+      <form class="row" id="keyForm">
+        <select id="keyProvider"></select>
+        <input type="password" id="keyValue" placeholder="new provider key (write-only)" autocomplete="off">
+        <button type="button" id="keyTestBtn" title="validate against the provider without saving">test key</button>
+        <button>add key</button>
+      </form>
+      <div class="err" id="keyErr"></div>
+    </section>
+    <section>
+      <h2>Custom endpoints</h2>
+      <p class="muted">Bring any OpenAI-compatible service: name + API base URL + the key that service issued. Models appear as <code>name:model-id</code>. Probe first to verify the endpoint answers, then add it.</p>
+      <form id="compatForm" class="stack">
+        <label for="compatName">Endpoint name</label>
+        <input id="compatName" type="text" maxlength="64" placeholder="for example: local-llama" autocomplete="off" required>
+        <small class="muted">Used as the model prefix. Use a distinct name for each endpoint.</small>
+        <label for="compatBaseUrl">API base URL</label>
+        <input id="compatBaseUrl" type="url" placeholder="https://host.example/v1" autocomplete="url" required>
+        <small class="muted">Include the API path such as <code>/v1</code> when required. Do not include a key or query parameters.</small>
+        <label for="compatApiKey">Upstream API key</label>
+        <input id="compatApiKey" type="password" placeholder="key from this provider" autocomplete="new-password" required>
+        <small class="muted">This is the key for the service above, not your dashboard password or router client key.</small>
+        <div class="inline">
+          <button type="button" id="compatProbeBtn">probe endpoint</button>
+          <button type="submit">add endpoint</button>
+        </div>
+      </form>
+      <div class="err" id="compatErr" role="alert" aria-live="polite"></div>
+      <div class="muted" id="probeResult" aria-live="polite"></div>
+      <table><thead><tr><th>endpoint</th><th>base URL</th><th>state</th><th></th></tr></thead><tbody id="compatInstances"></tbody></table>
+    </section>
+  </section>
+
+  <section class="page" data-page="security">
+    <section>
+      <h2>Security</h2>
+      <div class="cards" id="secCards"></div>
+    </section>
+    <section>
+      <h2>Client API keys</h2>
+      <p class="muted">Separate from the dashboard password. Use a client key in OpenAI or Anthropic API settings. A new key is shown only once.</p>
+      <form class="row" id="clientKeyForm"><input id="clientKeyName" type="text" maxlength="64" placeholder="key name (for example: Cline)" required><button>create API key</button></form>
+      <div class="err" id="clientKeyErr"></div>
+      <div id="clientKeyOnce" class="hidden"><input type="text" id="clientKeyValue" readonly><button type="button" id="copyClientKey">copy key</button></div>
+      <table><thead><tr><th>name</th><th>created</th><th></th></tr></thead><tbody id="clientKeys"></tbody></table>
+    </section>
+  </section>
+
+  <section class="page" data-page="analytics">
+    <section class="wide">
+      <h2>Usage</h2>
+      <div class="cards" id="usageCards"></div>
+      <h3>Requests + success rate per hour</h3>
+      <div class="toolbar">
+        <select id="usageWindow" title="history window">
+          <option value="24">last 24h</option>
+          <option value="168">last 7 days</option>
+        </select>
+        <span class="muted" id="usagePersisted"></span>
+        <span style="flex:1"></span>
+        <button id="usageResetBtn" class="danger">reset ledger</button>
+      </div>
+      <div id="usageChart"></div>
+      <div class="chart-grid">
+        <div><h3>avg latency / hour</h3><div id="usageLatChart"></div></div>
+        <div><h3>tokens out / hour</h3><div id="usageTokChart"></div></div>
+      </div>
+    </section>
+    <section>
+      <h2>By provider</h2>
+      <table><thead><tr><th>provider</th><th>req</th><th>ok %</th><th>tokens in/out</th><th>avg ms</th><th>share</th></tr></thead>
+      <tbody id="usageProviders"></tbody></table>
+    </section>
+    <section>
+      <h2>Top models</h2>
+      <table><thead><tr><th>#</th><th>model</th><th>provider</th><th>req</th><th>ok/fail</th><th>tokens in/out</th><th>avg ms</th></tr></thead>
+      <tbody id="usageModels"></tbody></table>
+    </section>
+    <section>
+      <h2>By client key</h2>
+      <table><thead><tr><th>name</th><th>req</th><th>ok/fail</th><th>last used</th></tr></thead>
+      <tbody id="usageKeys"></tbody></table>
+    </section>
+    <section>
+      <h2>Live activity</h2>
+      <div id="log"></div>
+    </section>
+    <section>
+      <h2>Audit trail</h2>
+      <div class="toolbar"><button id="auditRefreshBtn">reload</button><span class="muted">every dashboard mutation, newest first — never secrets</span></div>
+      <div id="audit"></div>
+    </section>
+  </section>
+
+  <section class="page" data-page="settings">
+    <section>
+      <h2>Routing</h2>
+      <form id="settingsForm" class="stack">
+        <label for="setName">Router name</label>
+        <input id="setName" type="text" maxlength="64">
+        <label for="setPool">Model pool</label>
+        <select id="setPool">
+          <option value="all">all — every model a key can reach (runtime billing demotion guards cost)</option>
+          <option value="free">free — only models with free-tier evidence</option>
+        </select>
+        <label for="setDefaultModel">Default model</label>
+        <input id="setDefaultModel" type="text" list="modelIds" placeholder="used when a client asks for an unknown or paid id">
+        <small class="muted">Leave empty to keep pure strategy order for unknown ids.</small>
+        <label for="setAliases">Model aliases</label>
+        <textarea id="setAliases" placeholder="fast = groq:llama-3.3-70b&#10;smart = zen:claude-haiku"></textarea>
+        <small class="muted">One per line as <code>alias = model-id</code>. Clients request the alias; you can retarget it anytime.</small>
+      </form>
+    </section>
+    <section>
+      <h2>Scoring</h2>
+      <p class="muted">How the <code>smartest</code> strategy ranks models — your weights, not hardcoded ones. Weights renormalize automatically; 'verified' counts only for models with free-tier evidence.</p>
+      <div id="weightSliders"></div>
+      <div class="toolbar">
+        <button id="weightsSave">save weights</button>
+        <button id="weightsReset">reset defaults</button>
+        <span class="ok-msg" id="weightsMsg" aria-live="polite"></span>
+      </div>
+      <h3>Preview — top 5 under these weights</h3>
+      <div id="weightsPreview"></div>
+    </section>
+    <section>
+      <h2>Layers</h2>
+      <form id="layersForm" class="stack">
+        <div class="inline"><input type="checkbox" id="setStealth"><label for="setStealth">Stealth — hide real model ids from clients</label></div>
+        <label for="setStealthAlias">Stealth alias</label>
+        <input id="setStealthAlias" type="text" maxlength="64">
+        <div class="inline"><input type="checkbox" id="setScrub"><label for="setScrub">Scrub model ids from assistant text too</label></div>
+        <div class="inline"><input type="checkbox" id="setPersona"><label for="setPersona">Persona — prepend the system persona</label></div>
+        <div class="inline"><input type="checkbox" id="setDecision"><label for="setDecision">Decision plane — Jev classify/diagnose (free, fail-open)</label></div>
+        <label for="setCompaction">Compaction strategy</label>
+        <select id="setCompaction">
+          <option value="summarize">summarize — condense old turns with one free-model call</option>
+          <option value="truncate-oldest">truncate-oldest — drop oldest turns that do not fit</option>
+        </select>
+        <label for="setCatalogMinutes">Catalog refresh (minutes)</label>
+        <input id="setCatalogMinutes" type="number" min="1" step="1">
+        <label for="setProbeMs">Probe interval (ms)</label>
+        <input id="setProbeMs" type="number" min="1000" step="1000">
+        <label for="setStandby">Pre-warmed standbys</label>
+        <input id="setStandby" type="number" min="0" max="10" step="1">
+        <button type="submit">save settings</button>
+        <div class="ok-msg" id="settingsMsg" aria-live="polite"></div>
+      </form>
+    </section>
+    <datalist id="modelIds"></datalist>
+  </section>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="/dashboard.js"></script>
+<script src="/dashboard-models.js"></script>
+<script src="/dashboard-playground.js"></script>
+<script src="/dashboard-pages.js"></script>
+<script src="/dashboard-analytics.js"></script>
+<script src="/dashboard-settings.js"></script>
+</body>
+</html>

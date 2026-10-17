@@ -1,0 +1,21 @@
+{
+  "name": "free-router",
+  "version": "0.1.0",
+  "description": "Self-hosted free-model router: one frontend key, free-only routes, sticky failover, Jev decision plane, control dashboard",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --test \"tests/*.test.mjs\"",
+    "dev": "cf dev",
+    "build": "cf build",
+    "deploy": "cf deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "beta",
+    "cf": "^1.0.0-beta.14"
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "name": "Cloud",
+  "dashboardPassword": "",
+  "apiKeys": [],
+  "host": "127.0.0.1",
+  "port": 4141,
+  "autoDiscover": true,
+  "selection": {
+    "strategy": "sticky",
+    "weights": { "success": 0.4, "latency": 0.3, "freshness": 0.15, "priority": 0.05, "verified": 0.1 },
+    "blacklist": [],
+    "priorities": {},
+    "defaultModel": "",
+    "aliases": {},
+    "timeboxMs": 700,
+    "attemptTimeoutMs": 60000,
+    "pool": "all"
+  },
+  "providers": {
+    "zen": { "enabled": true, "importOpencodeAuth": true, "keys": [], "baseUrl": "" },
+    "openrouter": { "enabled": true, "keys": [] },
+    "groq": { "enabled": true, "keys": [] },
+    "gemini": { "enabled": true, "keys": [] },
+    "cerebras": { "enabled": true, "keys": [], "baseUrl": "" },
+    "sambanova": { "enabled": true, "keys": [], "baseUrl": "" },
+    "mistral": { "enabled": true, "keys": [], "baseUrl": "" },
+    "kilo": { "enabled": true, "keys": [], "baseUrl": "" },
+    "ovh": { "enabled": true, "keys": [], "baseUrl": "" },
+    "llm7": { "enabled": true, "keys": [], "baseUrl": "" },
+    "zai": { "enabled": true, "keys": [], "baseUrl": "" },
+    "nvidia": { "enabled": true, "keys": [], "baseUrl": "" },
+    "qwen": { "enabled": true, "keys": [], "baseUrl": "" },
+    "kluster": { "enabled": true, "keys": [], "baseUrl": "" },
+    "huggingface": { "enabled": true, "keys": [], "baseUrl": "" },
+    "openai-compat": {
+      "enabled": false,
+      "instances": []
+    }
+  },
+  "probe": { "intervalMs": 120000, "standbyWarm": 2, "sweepIntervalMs": 3600000, "sweepActiveWindowMs": 3600000 },
+  "refresh": { "catalogMinutes": 10 },
+  "security": {
+    "rateLimitPerMin": 60,
+    "allowedIps": []
+  },
+  "stealth": {
+    "enabled": false,
+    "alias": "cloud-1",
+    "scrubContent": false
+  },
+  "persona": {
+    "enabled": true,
+    "prependClientSystem": true,
+    "prompt": "Be a concise, accurate assistant. Give the smallest answer that fully solves the request - no filler, no restating the question, no praise, no AI boilerplate. Prefer correct and maintainable over clever. A short answer when a short answer works; expand only when the task needs it. Ask at most one clarifying question, and only when the request is genuinely ambiguous. For code, match the user's project style and never invent APIs."
+  },
+  "compaction": {
+    "strategy": "summarize",
+    "summarizeTimeoutMs": 15000
+  },
+  "contextWindows": {},
+  "decision": {
+    "enabled": true,
+    "model": "jev-1.13-free",
+    "baseUrl": "",
+    "classify": true,
+    "diagnose": true,
+    "rankHints": true,
+    "toolVerify": "off",
+    "expose": true
+  }
+}
