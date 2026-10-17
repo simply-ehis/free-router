@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { validateConfig } from '../src/config.mjs';
 import { registry, byId } from '../src/providers/index.mjs';
-import { refresh, getState as getCatalog, reinstate } from '../src/catalog.mjs';
+import { refresh, getState as getCatalog, reinstate, isTextModel } from '../src/catalog.mjs';
 
 let orMock;
 let groqMock;
@@ -452,6 +452,37 @@ test('zai: key-required, free-source tags for flash/4.x models, Bearer auth', as
     assert.equal(seen[0].auth, 'Bearer zai-key-1');
     assert.equal(seen[0].body.model, 'glm-4.7-flash');
   } finally { await mock.close(); }
+});
+
+test('modality filtering: text models pass, image/audio/video/embedding/batch models excluded', () => {
+  // Text models should pass
+  for (const id of ['gpt-4o', 'claude-3-5-sonnet', 'llama-3.1-70b-instruct', 'deepseek-chat', 'gemini-1.5-pro', 'big-pickle', 'beam-free', 'kilo-auto/free']) {
+    assert.ok(isTextModel(id), `${id} should be a text model`);
+  }
+  // Image models should be excluded
+  for (const id of ['dall-e-3', 'midjourney-v6', 'stable-diffusion-xl', 'sdxl-turbo', 'flux-dev', 'imagen-3', 'image-gen-v1', 'generative-image', 'text-to-image-v2']) {
+    assert.ok(!isTextModel(id), `${id} should NOT be a text model`);
+  }
+  // Audio/TTS/STT models should be excluded
+  for (const id of ['tts-1', 'whisper-1', 'elevenlabs-multilingual-v2', 'text-to-speech-hd', 'speech-to-text', 'voice-gen', 'audio-transcribe', 'transcription-v1']) {
+    assert.ok(!isTextModel(id), `${id} should NOT be a text model`);
+  }
+  // Video models should be excluded
+  for (const id of ['sora', 'runway-gen-2', 'pika-1.0', 'luma-dream-machine', 'text-to-video-v1', 'video-gen-xl']) {
+    assert.ok(!isTextModel(id), `${id} should NOT be a text model`);
+  }
+  // Embedding models should be excluded
+  for (const id of ['text-embedding-3-small', 'bge-large-en-v1.5', 'e5-base-v2', 'gte-large', 'embedding-001', 'embed-english-v3.0']) {
+    assert.ok(!isTextModel(id), `${id} should NOT be a text model`);
+  }
+  // Moderation models should be excluded
+  for (const id of ['text-moderation-latest', 'omni-moderation']) {
+    assert.ok(!isTextModel(id), `${id} should NOT be a text model`);
+  }
+  // Batch API variants should be excluded
+  for (const id of ['gpt-4o:batch', 'claude-3-5-sonnet:batch', 'deepseek-chat:batch']) {
+    assert.ok(!isTextModel(id), `${id} should NOT be a text model`);
+  }
 });
 
 test('nvidia: key-required, models.dev free tag, Bearer auth', async () => {

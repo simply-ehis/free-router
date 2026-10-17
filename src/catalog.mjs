@@ -9,6 +9,32 @@ const MODELS_DEV_URL = 'https://models.dev/api.json';
 const CACHE_PATH = path.join(ROOT, '.cache', 'models-dev-free.json');
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
+// Model ID patterns that indicate non-text/chat models. These are excluded
+// from the catalog so clients only see text-completion-capable models.
+// Match is case-insensitive on the model id.
+const NON_TEXT_PATTERNS = [
+  // Image generation / vision-only
+  /dall-e/, /midjourney/, /stable.?diffusion/, /sdxl/, /flux/, /imagen/,
+  /image.?gen/, /image.?generation/, /generative.?image/, /text.?to.?image/,
+  // Audio / TTS / STT / voice
+  /tts/, /text.?to.?speech/, /speech.?to.?text/, /whisper/, /elevenlabs/,
+  /voice.?gen/, /audio.?gen/, /transcribe/, /transcription/,
+  // Video generation
+  /video.?gen/, /sora/, /runway/, /pika/, /luma/, /text.?to.?video/,
+  // Embeddings
+  /embedding/, /embed/, /bge/, /e5[-/]/, /gte[-/]/, /text.?embedding/,
+  // Moderation / safety
+  /moderation/,
+  // Batch API variants (not chat completions)
+  /:batch$/,
+];
+
+function isTextModel(modelId) {
+  const lower = modelId.toLowerCase();
+  return !NON_TEXT_PATTERNS.some((re) => re.test(lower));
+}
+export { isTextModel };
+
 const state = {
   models: new Map(), // id -> { id, provider, protocol, sources[], addedAt }
   demoted: new Map(), // id -> { reason, at }
@@ -80,6 +106,7 @@ export async function refresh(cfg) {
       const ids = await provider.listModelIds(cfg);
       for (const modelId of ids) {
         if (blacklisted.has(modelId)) continue;
+        if (!isTextModel(modelId)) continue;
         const sources = provider.freeSources?.(modelId, freeTable) ?? [];
         if (poolMode === 'free' && sources.length === 0) continue;
         if (state.demoted.has(modelId)) continue;
