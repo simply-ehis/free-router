@@ -11,6 +11,7 @@
     "blacklist": [],
     "priorities": {},
     "defaultModel": "",
+    "forceChat": [],
     "aliases": {},
     "timeboxMs": 700,
     "attemptTimeoutMs": 60000,
@@ -41,7 +42,10 @@
   "refresh": { "catalogMinutes": 10 },
   "security": {
     "rateLimitPerMin": 60,
-    "allowedIps": []
+    "allowedIps": [],
+    "sessionHours": 12,
+    "maxLoginFailures": 5,
+    "sessionEpoch": 0
   },
   "stealth": {
     "enabled": false,

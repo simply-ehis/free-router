@@ -181,7 +181,7 @@ export async function handleRequest(request, cfg) {
   const url = new URL(request.url);
   const isHtml = url.pathname === '/' || url.pathname === '/dashboard';
   const isApi = url.pathname.startsWith('/api/') || url.pathname.startsWith('/v1/');
-  const baseHeaders = securityHeaders({ isApi: isApi && !isHtml, isHtml });
+  const baseHeaders = securityHeaders({ isApi: isApi && !isHtml, isHtml, secure: url.protocol === 'https:' });
   if (!ipAllowed(cfg, remoteIp(request))) {
     return errRes(403, 'IP not allowed', 'invalid_request_error', baseHeaders);
   }
@@ -195,6 +195,9 @@ export async function handleRequest(request, cfg) {
     }
   }
   if (url.pathname === '/healthz') return jsonRes(200, { status: 'ok' }, baseHeaders);
+  if (url.pathname === '/robots.txt') {
+    return new Response('User-agent: *\nDisallow: /\n', { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', ...baseHeaders } });
+  }
   if (url.pathname === '/favicon.ico') {
     return new Response(null, { status: 204, headers: { 'cache-control': 'public, max-age=86400' } });
   }
@@ -287,7 +290,10 @@ export function startServer(cfg) {
       .then((response) => sendResponse(res, response))
       .catch((err) => {
         const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
-        logger.error('request handler crashed', { error: err.message, pathname });
+        // A browser closing a stream (tab closed, EventSource reconnect) is routine, not a crash.
+        const hangup = err?.code === 'ERR_STREAM_PREMATURE_CLOSE' || err?.message === 'Premature close' || err?.code === 'ECONNRESET';
+        if (hangup && res.headersSent) logger.debug?.('client closed the stream', { pathname });
+        else logger.error('request handler crashed', { error: err.message, pathname });
         if (!res.headersSent) {
           const body = JSON.stringify({ error: { message: 'Internal router error', type: 'server_error' } });
           res.writeHead(500, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });

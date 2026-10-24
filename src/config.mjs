@@ -93,6 +93,13 @@ export function saveConfig(cfg) {
   store.write(CONFIG_PATH, JSON.stringify(cfg, null, 2));
 }
 
+// Awaited variant for dashboard writes: on Workers the KV put must finish
+// before the response goes out, or the setting silently evaporates.
+export async function saveConfigDurable(cfg) {
+  validateConfig(cfg);
+  await store.writeDurable(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+}
+
 export function validateConfig(cfg) {
   const fail = (msg) => { throw new Error(`config invalid: ${msg}`); };
   if (typeof cfg !== 'object' || cfg === null) fail('root must be an object');
@@ -112,6 +119,7 @@ export function validateConfig(cfg) {
       if (typeof value !== 'number' || value < 0 || value > 1) fail('selection.priorities.' + id + ' must be 0-1');
     }
   }
+  if (cfg.selection?.forceChat !== undefined && (!Array.isArray(cfg.selection.forceChat) || cfg.selection.forceChat.some((id) => typeof id !== 'string' || !id))) fail('selection.forceChat must be a string[]');
   if (cfg.selection?.defaultModel !== undefined && typeof cfg.selection.defaultModel !== 'string') fail('selection.defaultModel must be a string ("" = no default)');
   if (cfg.selection?.aliases !== undefined) {
     if (typeof cfg.selection.aliases !== 'object' || cfg.selection.aliases === null || Array.isArray(cfg.selection.aliases)) fail('selection.aliases must be an object');
@@ -138,6 +146,9 @@ export function validateConfig(cfg) {
   if (cfg.security !== undefined) {
     if (!Number.isInteger(cfg.security?.rateLimitPerMin) || cfg.security.rateLimitPerMin < 0) fail('security.rateLimitPerMin must be int >= 0 (0 = off)');
     if (!Array.isArray(cfg.security?.allowedIps) || cfg.security.allowedIps.some((ip) => typeof ip !== 'string' || !ip)) fail('security.allowedIps must be string[]');
+    if (cfg.security.sessionHours !== undefined && (!Number.isInteger(cfg.security.sessionHours) || cfg.security.sessionHours < 1 || cfg.security.sessionHours > 720)) fail('security.sessionHours must be int 1-720');
+    if (cfg.security.sessionEpoch !== undefined && (!Number.isInteger(cfg.security.sessionEpoch) || cfg.security.sessionEpoch < 0)) fail('security.sessionEpoch must be a non-negative int');
+    if (cfg.security.maxLoginFailures !== undefined && (!Number.isInteger(cfg.security.maxLoginFailures) || cfg.security.maxLoginFailures < 3 || cfg.security.maxLoginFailures > 50)) fail('security.maxLoginFailures must be int 3-50');
   }
   if (cfg.stealth !== undefined) {
     if (typeof cfg.stealth?.enabled !== 'boolean') fail('stealth.enabled must be boolean');
@@ -204,9 +215,11 @@ export function importOpencodeZenKey() {
   }
 }
 
+// Shows just enough to tell keys apart: 4 + 4 characters, and nothing at all
+// for keys too short to hide behind that.
 export function maskKey(key) {
-  if (typeof key !== 'string' || key.length < 12) return '****';
-  return `${key.slice(0, 8)}…${key.slice(-4)}`;
+  if (typeof key !== 'string' || key.length < 16) return '****';
+  return `${key.slice(0, 4)}…${key.slice(-4)}`;
 }
 
 // Normalizes provider key entries: legacy string or {key, enabled}. `idx` is the

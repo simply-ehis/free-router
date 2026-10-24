@@ -1,6 +1,7 @@
 // @body:organ=muscle type=provider role="Kilo Gateway adapter: OpenAI-compatible universal gateway, anonymous keyless tier for :free models"
 import { enabledKeyEntries } from '../config.mjs';
 import { mergeDiscovered } from '../discovery.mjs';
+import { listJsonModels } from './listing.mjs';
 
 export const id = 'kilo';
 const DEFAULT_BASE = 'https://ai-gateway.kilo.ai/api/v1';
@@ -28,11 +29,12 @@ export function protocolOf() {
   return 'chat';
 }
 
-export async function listModelIds(cfg, { signal } = {}) {
-  const res = await fetch(`${base(cfg)}/models`, { signal: signal ?? AbortSignal.timeout(LIST_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`kilo listModels HTTP ${res.status}`);
-  const json = await res.json();
-  return (json.data ?? []).map((m) => m.id).filter(Boolean);
+export async function listModels(cfg, { signal } = {}) {
+  return listJsonModels(`${base(cfg)}/models`, { signal, timeoutMs: LIST_TIMEOUT_MS, label: 'kilo' });
+}
+
+export async function listModelIds(cfg, opts) {
+  return (await listModels(cfg, opts)).map((m) => m.id);
 }
 
 // Kilo tags free models with the `:free` suffix (e.g. z-ai/glm-5:free, minimax/minimax-m2.1:free).

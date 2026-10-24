@@ -26,7 +26,7 @@ scores/sticks routes, probes standbys, decides with Jev, and serves a control da
 | 👁️ Face | `/v1/*`, `/api/*`, `/status`, dashboard at `/` | outside-world surface |
 | 🫁 Lungs | `providers/*` (external APIs), models.dev fetch | boundary with outside world |
 | 🛡️ Immune | config validation, dashboard-password and client-key auth, `classifyError`, time-boxing | validation/error/security |
-| 🩹 Skin | `web/dashboard.html` + `web/dashboard.css` + `web/dashboard.js` (core/overview) + `dashboard-models.js` + `dashboard-playground.js` + `dashboard-pages.js` (providers/security) + `dashboard-analytics.js` + `dashboard-settings.js` (split files, served as static assets) | presentation |
+| 🩹 Skin | `web/dashboard.html` + `web/dashboard.css` + `web/dashboard.js` (core/overview) + `dashboard-models.js` + `dashboard-playground.js` + `dashboard-providers.js` + `dashboard-security.js` + `dashboard-analytics.js` + `dashboard-settings.js` (split files, served as static assets) | presentation |
 
 ## Skeleton
 
@@ -57,15 +57,17 @@ src/
 | boot | `src/index.mjs` | entry (`npm start`) | done P1 |
 | config | `src/config.mjs` | imported by `index.mjs` | done P1 |
 | zen adapter | `src/providers/zen.mjs` | `providers/index.mjs#registry` | done P2 |
-| catalog | `src/catalog.mjs` | `index.mjs` → `server.mjs` | done P2/P15 (open pool) |
+| catalog | `src/catalog.mjs` | `index.mjs` → `server.mjs`; classifies every listed model (chat vs image/video/audio/embedding/…), keeps non-chat ones in `filtered` with a reason; `selection.forceChat` overrides; soft demotions expire | done P2/P15 (open pool), polish pass 2026-10 |
+| model modality | `src/modality.mjs` + `src/providers/listing.mjs` | `catalog.mjs#refresh`; provider adapters expose `listModels()` (id + raw metadata); metadata first (output modalities, capabilities, generation methods, type fields), word-based name rules second | polish pass 2026-10 |
+| free lanes | `src/freeLanes.mjs` | `probe.mjs` (per-provider hourly ceiling for background checks), `dashboardStatus.mjs` (lane notes) | polish pass 2026-10 |
 | route engine | `src/routes.mjs` | `server.mjs` (chat handler) | done P3 (stream+non-stream) |
 | strategies | `src/strategies/*.mjs` | `strategies/index.mjs#registry` | done P3 |
-| prober | `src/probe.mjs` | `index.mjs` (interval) | done P4 (added hourly full-model sweep during active use; dead models demoted immediately) |
+| prober | `src/probe.mjs` | `index.mjs` (interval), `dashboard.mjs` (`/api/models/verify`) | done P4; polish pass 2026-10: 429 = limited not failing, only billing/404/keyless-401 demote (soft ones expire), per-provider check budget, on-demand verify |
 | SSE relay | `src/server.mjs#handleChat` | streaming branch of chat handler | done P4 |
 | decision plane | `src/decision.mjs` | `routes.mjs` + `middleware/toolverify.mjs` + `/v1/decide` | done P5 |
 | tool-verify gate | `src/middleware/toolverify.mjs` | `routes.mjs#verifyResponse` (non-stream) | done P5 |
 | adapters OR/Groq/Gemini | `src/providers/{openrouter,groq,gemini}.mjs` | `providers/index.mjs#registry` | done P6 |
-| dashboard | `src/dashboard.mjs` + `web/dashboard.{html,css}` + `web/dashboard-{js,models.js,playground.js,pages.js,analytics.js,settings.js}` | `server.mjs` (`/` + `/api/*`, SSE via bus); password auth + 7 tabbed pages (overview/models/playground/providers/analytics/security/settings); key routes delegate to `providerKeys.mjs` | updated P27 |
+| dashboard | `src/dashboard.mjs` + `src/dashboardStatus.mjs` + `web/dashboard.{html,css}` + `web/dashboard{,-models,-playground,-providers,-security,-analytics,-settings}.js` | `server.mjs` (`/` + `/api/*`, SSE via bus); session-cookie auth + 7 tabbed pages (overview/models/playground/providers/analytics/security/settings); key routes delegate to `providerKeys.mjs`; settings writes are awaited and refresh the pool when membership changes | updated polish pass 2026-10 |
 | dashboard assets | `src/dashboardAssets.mjs` | `server.mjs` (GET `/dashboard*.css|js`, no auth); `worker.mjs` (`?raw` bundle via `setDashboardAsset`) | done P22, extended P24 |
 | usage ledger | `src/usage.mjs` | `routes.mjs#runChat` (record + attemptIndex), `dashboard.mjs` (`/api/usage`, `/api/usage/reset`); hourly latency/failover buckets, per-provider rollup, store-seam persistence | updated P28 |
 | selection v2 | `src/routes.mjs#resolveRequested` + `src/strategies/smartest.mjs` | aliases/defaultModel resolution; `verified` scoring component (evidence map) | done P19 |
@@ -75,6 +77,7 @@ src/
 | compat instances | `src/compatInstances.mjs` | `dashboard.mjs` (add/probe/toggle/remove custom endpoints) | done P21/P22 |
 | client API keys | `src/apiKeys.mjs` + `src/dashboard.mjs` | `/v1/*` authentication; hash records in store/KV | separate from dashboard password |
 | Anthropic protocol | src/anthropic.mjs | server.mjs (/v1/messages, Anthropic model list) | OpenAI chat translation + SSE |
+| dashboard auth | `src/dashboardAuth.mjs` + `src/session.mjs` + `src/authGuard.mjs` + `src/audit.mjs` | `dashboard.mjs#handleDashboard`; stateless HMAC session cookie (key derived from password + `security.sessionEpoch`), per-IP lockout with backoff + global soft cap, same-origin guard for cookie writes, audit trail | polish pass 2026-10 |
 | gateway hardening | `src/security.mjs` | `server.mjs#route` (headers, IP allowlist, rate limit) + dashboard (rotate/toggle keys) | done P10 |
 | stealth layer | `src/stealth.mjs` | `server.mjs` (`/v1/models` alias list, chat JSON + SSE rewrite) | done P11 |
 | persona layer | `src/persona.mjs` | `routes.mjs#runChat` (merged system message, chat only) | done P12 |
@@ -87,7 +90,7 @@ src/
 | provider key mutations | `src/providerKeys.mjs` | `dashboard.mjs` key routes (add/remove/toggle); Worker path persists encrypted + rolls back on KV failure, 503 without `COMPAT_CREDENTIALS_KEY` | done P23 |
 | runtime platform | `src/runtime.mjs` | Worker entrypoint sets platform for sensitive features | active |
 | store seam | `src/store.mjs` | `config.mjs`/`catalog.mjs`/`providerKeys.mjs` (read/write/append + `writeDurable`); Workers KV via `installKvStore` | done P17 |
-| worker entrypoint | `src/worker.mjs` + `src/workerConfig.mjs` | `cloudflare.config.ts` (fetch/scheduled, secrets, KV, cron) | done P17 |
+| worker entrypoint | `src/worker.mjs` + `src/workerConfig.mjs` | `cloudflare.config.ts` (fetch/scheduled, secrets, KV, cron); durable awaited saves (secrets never reach KV config), coalesced background writes finished under `ctx.waitUntil`, cross-isolate `syncFromKv` via a revision key, no boot-time config overwrite | done P17; polish pass 2026-10 |
 
 ## Growth rules
 

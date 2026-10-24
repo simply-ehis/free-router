@@ -1,6 +1,7 @@
 // @body:organ=muscle type=provider role="Kluster.ai adapter: OpenAI-compatible, key-required"
 import { enabledKeyEntries } from '../config.mjs';
 import { mergeDiscovered } from '../discovery.mjs';
+import { listJsonModels } from './listing.mjs';
 
 export const id = 'kluster';
 const DEFAULT_BASE = 'https://api.kluster.ai/v1';
@@ -24,11 +25,12 @@ export function protocolOf() {
   return 'chat';
 }
 
-export async function listModelIds(cfg, { signal } = {}) {
-  const res = await fetch(`${base(cfg)}/models`, { signal: signal ?? AbortSignal.timeout(LIST_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`kluster listModels HTTP ${res.status}`);
-  const json = await res.json();
-  return (json.data ?? []).map((m) => m.id).filter(Boolean);
+export async function listModels(cfg, { signal } = {}) {
+  return listJsonModels(`${base(cfg)}/models`, { signal, timeoutMs: LIST_TIMEOUT_MS, label: 'kluster' });
+}
+
+export async function listModelIds(cfg, opts) {
+  return (await listModels(cfg, opts)).map((m) => m.id);
 }
 
 // Kluster models are paid; free detection from models.dev $0 or runtime 402 demotion.

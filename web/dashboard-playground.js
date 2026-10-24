@@ -69,11 +69,12 @@ async function pgStreamReply() {
   const started = Date.now();
   const res = await fetch('/api/playground', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + dashboardPassword },
+    headers: { 'content-type': 'application/json' },
+    credentials: 'same-origin',
     body: JSON.stringify(pgRequestBody()),
     signal: pgAbort.signal,
   });
-  if (res.status === 401) { lock(); throw new Error('invalid dashboard password'); }
+  if (res.status === 401) { showLogin('Your session ended. Sign in again.'); throw new Error('Sign in required'); }
   if (!res.ok) {
     const b = await res.json().catch(() => ({}));
     throw new Error(b?.error?.message || 'HTTP ' + res.status);

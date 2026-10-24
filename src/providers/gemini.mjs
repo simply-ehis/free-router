@@ -1,6 +1,7 @@
 // @body:organ=muscle type=provider role="Google AI Studio adapter: native model list + OpenAI-compatible chat (free rate-limited tier)"
 import { enabledKeyEntries } from '../config.mjs';
 import { mergeDiscovered } from '../discovery.mjs';
+import { listJsonModels } from './listing.mjs';
 
 export const id = 'gemini';
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -27,19 +28,22 @@ export function protocolOf() {
 // The OpenAI-compat surface has no /models route (404, verified); listing uses
 // the native endpoint which requires a key. Model ids are "models/<id>" there —
 // stripped so client requests match the OpenAI-compat chat route.
-export async function listModelIds(cfg, { signal } = {}) {
+export async function listModels(cfg, { signal } = {}) {
   const cred = listCredentials(cfg)[0];
   if (!cred) throw new Error('gemini listModels requires a key (FREE_ROUTER_GEMINI_KEYS or GEMINI_API_KEY)');
-  const res = await fetch(`${base(cfg)}/models`, {
-    signal: signal ?? AbortSignal.timeout(LIST_TIMEOUT_MS),
+  const rows = await listJsonModels(`${base(cfg)}/models`, {
+    signal,
+    timeoutMs: LIST_TIMEOUT_MS,
+    label: 'gemini',
     headers: { 'x-goog-api-key': cred.key },
+    pick: (json) => (json?.models ?? []).map((m) => ({ ...m, id: String(m?.name ?? '').replace(/^models\//, '') })),
   });
-  if (!res.ok) throw new Error(`gemini listModels HTTP ${res.status}`);
-  const json = await res.json();
-  return (json.models ?? [])
-    .filter((m) => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes('generateContent'))
-    .map((m) => (m.name ?? '').replace(/^models\//, ''))
-    .filter(Boolean);
+  // Only models that can generate content can ever answer a chat request.
+  return rows.filter(({ meta }) => !meta.supportedGenerationMethods || meta.supportedGenerationMethods.includes('generateContent'));
+}
+
+export async function listModelIds(cfg, opts) {
+  return (await listModels(cfg, opts)).map((m) => m.id);
 }
 
 // AI Studio keys are the rate-limited free tier by default; keys with Cloud

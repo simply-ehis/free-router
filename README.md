@@ -41,6 +41,29 @@ Connect any OpenAI-compatible client to your deployed endpoint:
 - **API Key:** your client key from the dashboard (create one under Security)
 - **Model:** any id from `GET /v1/models`
 
+## The dashboard
+
+- **Overview** shows how many models in the pool actually work right now (a proportional bar you can click), your connection URLs, and a tile for each free provider with its limits.
+- **Models** lists every model with a status — *working*, *rate limited*, *failing* or *not tested yet* — plus a strip of its last results. Filter by status, provider or free-only, and press **Test shown models** to check them. A 429 from a free tier shows as *rate limited*, never as *failing*.
+- **Only chat models enter the pool.** Image, video, audio, embedding, reranker, safety-classifier and OCR models are filtered out using each provider's own metadata (output modalities, capabilities, supported methods) and word-based name rules. They are listed under *Filtered out* with the reason, and **Allow as chat** puts a wrongly filtered one back.
+- **Providers** has the free providers up top, then one block per provider with each key listed (masked), with turn on/off and remove per key, multi-key paste, and a test button.
+- **Security** has client keys (create, pause, revoke), access limits (rate limit, IP allow-list with a lock-out guard, session length), and sign out everywhere.
+
+## Security model
+
+The dashboard is for one person, so the design is: a long random password, a session cookie, and no secrets in the page.
+
+- Signing in sets an `HttpOnly`, `SameSite=Strict` cookie (`Secure` on https). The password is never stored in the browser and never sent in a URL. Sessions are signed with a key derived from the password, so changing the password — or pressing **Sign out everywhere** — ends every session.
+- Wrong passwords lock that IP (5 failures, then 1 minute, doubling to 1 hour). A flood of failures from many IPs pauses password attempts for 5 minutes; signed-in sessions are unaffected. Scripts that send `Authorization: Bearer <password>` go through the same lockout.
+- Writes made with the cookie must come from the dashboard's own origin. The page ships no inline scripts, and the CSP allows scripts from `'self'` only. Responses are `noindex`, `no-store` and unframeable.
+- Custom endpoints must use https (plain http only for local hosts), and a cloud deployment refuses private/local addresses.
+- Every dashboard change and sign-in attempt is in the audit trail (never with secrets).
+- Strongest option for a cloud deployment: put the dashboard path behind Cloudflare Access, or set an IP allow-list under Security.
+
+## Free providers
+
+Anonymous free tiers share a per-IP quota, so background health checks are budgeted per provider per hour (Kilo 30, OVH 60, LLM7 40, Zen 40, keyed providers 60) and never use the quota your requests need. A manual **Test** always runs. A 401/403 on a keyless lane means "this model needs a paid token" and hides that model for 6 hours; a 401/403 on *your own* key never hides models, so a rotated key cannot empty the pool. 404 hides a model for 6 hours; a billing signal hides it until you bring it back.
+
 ## Providers in the pool
 
 | Provider | Key needed? | Free models | Endpoint |
@@ -115,7 +138,7 @@ curl http://127.0.0.1:4141/v1/chat/completions -H "Authorization: Bearer <client
 ## Safety
 
 - Billing signals demote a route on the first `402` — a paid model on a free key can never charge you
-- Runtime probes revive unhealthy models hourly
+- Runtime probes revive unhealthy models; background checks are budgeted per provider so free tiers keep their quota
 - Sticky failover across the free pool — if one model is down, the next one answers
 - Set `selection.pool: "free"` in `config.json` for a strict free-only filter
 

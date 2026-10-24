@@ -1,5 +1,5 @@
 // @body:organ=muscle role="provider key mutations: add/remove/toggle with encrypted Worker persistence and rollback"
-import { saveConfig, providerKeyEntries, enabledKeyEntries, PROVIDER_CREDENTIALS_PATH } from './config.mjs';
+import { saveConfigDurable, providerKeyEntries, enabledKeyEntries, PROVIDER_CREDENTIALS_PATH } from './config.mjs';
 import { store } from './store.mjs';
 import { logger } from './util/log.mjs';
 import { isWorkerRuntime } from './runtime.mjs';
@@ -43,7 +43,7 @@ export async function addKeys(cfg, provider, keys) {
   p.keys = [...new Set([...(p.keys ?? []), ...keys.map((k) => k.trim())])];
   const blocked = await persistWorkerKeys(cfg, provider);
   if (blocked) { p.keys = before; return blocked; }
-  saveConfig(cfg);
+  await saveConfigDurable(cfg);
   return { keys: p.keys.length };
 }
 
@@ -56,7 +56,7 @@ export async function removeKey(cfg, provider, label) {
   p.keys.splice(rawIdx, 1);
   const blocked = await persistWorkerKeys(cfg, provider);
   if (blocked) { p.keys.splice(rawIdx, 0, removed); return blocked; }
-  saveConfig(cfg);
+  await saveConfigDurable(cfg);
   return { keys: enabledKeyEntries(p).length };
 }
 
@@ -69,6 +69,6 @@ export async function toggleKey(cfg, provider, label, enabled) {
   p.keys[rawIdx] = typeof entry === 'string' ? { key: entry, enabled } : { ...entry, enabled };
   const blocked = await persistWorkerKeys(cfg, provider);
   if (blocked) { p.keys[rawIdx] = entry; return blocked; }
-  saveConfig(cfg);
+  await saveConfigDurable(cfg);
   return { keys: enabledKeyEntries(p).length, total: providerKeyEntries(p).length };
 }

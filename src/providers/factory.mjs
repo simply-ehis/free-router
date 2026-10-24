@@ -1,6 +1,7 @@
 // @body:organ=muscle type=provider role="OpenAI-compatible provider factory: one adapter implementation for any base-URL+key endpoint (free-tier presets)"
 import { enabledKeyEntries } from '../config.mjs';
 import { mergeDiscovered } from '../discovery.mjs';
+import { listJsonModels } from './listing.mjs';
 
 const LIST_TIMEOUT_MS = 30_000;
 
@@ -27,22 +28,22 @@ export function makeOpenAIProvider({ id, defaultBase, freeSources: sourcesFor = 
   };
   const listCredentials = (cfg) => mergeDiscovered(id, cfg, enabledKeyEntries(cfg.providers?.[id])
     .map((e) => ({ provider: id, label: `${id}-${e.idx}`, key: e.key })));
-  return {
+  const provider = {
     id,
     defaultBase,
     isEnabled: (cfg) => cfg.providers?.[id]?.enabled === true,
     listCredentials,
     protocolOf: () => 'chat',
-    listModelIds: async (cfg, { signal } = {}) => {
+    listModels: async (cfg, { signal } = {}) => {
       const cred = listCredentials(cfg)[0];
-      const res = await fetch(`${base(cfg)}/models`, {
-        signal: signal ?? AbortSignal.timeout(LIST_TIMEOUT_MS),
+      return listJsonModels(`${base(cfg)}/models`, {
+        signal,
+        timeoutMs: LIST_TIMEOUT_MS,
+        label: id,
         headers: cred ? { authorization: `Bearer ${cred.key}` } : {},
       });
-      if (!res.ok) throw new Error(`${id} listModels HTTP ${res.status}`);
-      const json = await res.json();
-      return (json.data ?? []).map((m) => m?.id).filter((v) => typeof v === 'string' && v.length > 0);
     },
+    listModelIds: async (cfg, opts) => (await provider.listModels(cfg, opts)).map((m) => m.id),
     freeSources: (modelId, freeTable) => sourcesFor(modelId, freeTable),
     chat: (cfg, cred, body, { signal } = {}) => fetch(`${base(cfg)}/chat/completions`, {
       method: 'POST',
@@ -52,4 +53,5 @@ export function makeOpenAIProvider({ id, defaultBase, freeSources: sourcesFor = 
     }),
     classifyError: classify,
   };
+  return provider;
 }

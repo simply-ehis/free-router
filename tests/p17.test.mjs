@@ -78,12 +78,14 @@ test('handleRequest: /api/status 401 without key, 200 with header auth', async (
   assert.equal(body.name, 'Cloud');
 });
 
-test('handleRequest: ?key= only works on /api/events (EventSource form)', async () => {
+test('handleRequest: the password in a ?key= query string is never accepted (it leaks into logs)', async () => {
   const events = await handleRequest(req(`/api/events?key=${CLOUD_KEY}`, { headers: { accept: 'text/event-stream' } }), cfg());
-  assert.equal(events.status, 200);
-  await events.body?.cancel();
+  assert.equal(events.status, 401);
   const status = await handleRequest(req(`/api/status?key=${CLOUD_KEY}`), cfg());
   assert.equal(status.status, 401);
+  const viaHeader = await handleRequest(req('/api/events', { headers: { authorization: `Bearer ${CLOUD_KEY}`, accept: 'text/event-stream' } }), cfg());
+  assert.equal(viaHeader.status, 200);
+  await viaHeader.body?.cancel();
 });
 
 test('handleRequest: rate limit 429 after burst, retry-after set', async () => {

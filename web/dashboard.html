@@ -3,285 +3,389 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>free-router · Cloud</title>
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<title>free-router</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 6h6c4 0 4 6 8 6h4M3 12h18M3 18h6c4 0 4-6 8-6' fill='none' stroke='%232F43E6' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/dashboard.css">
 </head>
 <body>
-<div id="login">
-  <div class="box">
-    <h1>free-router</h1>
-    <p>Enter the dashboard password configured for this router.</p>
-    <form id="loginForm" onsubmit="return false;">
-      <input type="password" id="loginPassword" placeholder="dashboard password" autocomplete="current-password" autofocus>
-      <button id="loginBtn" style="width:100%;margin-top:8px">connect</button>
-    </form>
-    <div class="err" id="loginErr"></div>
-  </div>
+<div id="login" class="login" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+  <form id="loginForm" class="login-box">
+    <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h6c4 0 4 6 8 6h4M3 12h18M3 18h6c4 0 4-6 8-6"/></svg>
+    <h1 id="loginTitle">free-router</h1>
+    <p>Sign in with the dashboard password for this router.</p>
+    <label for="loginPassword" class="sr">Dashboard password</label>
+    <input type="password" id="loginPassword" placeholder="dashboard password" autocomplete="current-password" autofocus required>
+    <button id="loginBtn" class="primary" type="submit">Sign in</button>
+    <div class="err" id="loginErr" role="alert"></div>
+  </form>
 </div>
 
-<header>
-  <span class="dot" id="dot"></span>
-  <h1 id="title">free-router</h1>
-  <span class="muted" id="meta"></span>
-  <span style="flex:1"></span>
-  <select id="strategy" title="routing strategy"></select>
-  <button id="refreshBtn" title="re-list every provider now">refresh catalog</button>
-  <button id="logoutBtn">lock</button>
-</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h6c4 0 4 6 8 6h4M3 12h18M3 18h6c4 0 4-6 8-6"/></svg>
+      <div><b id="title">free-router</b><span id="meta" class="muted"></span></div>
+    </div>
+    <nav id="tabs" aria-label="Dashboard pages">
+      <button data-tab="overview" class="active">Overview</button>
+      <button data-tab="models">Models</button>
+      <button data-tab="providers">Providers</button>
+      <button data-tab="playground">Playground</button>
+      <button data-tab="analytics">Analytics</button>
+      <button data-tab="security">Security</button>
+      <button data-tab="settings">Settings</button>
+    </nav>
+    <div class="rail-foot">
+      <div class="pool-mini"><span class="dot" id="dot"></span><span id="poolMini">Loading</span></div>
+      <button id="themeBtn" class="ghost" title="Switch between system, light and dark">Theme: system</button>
+      <button id="logoutBtn" class="ghost">Sign out</button>
+    </div>
+  </aside>
 
-<nav id="tabs" aria-label="dashboard pages">
-  <button data-tab="overview" class="active">overview</button>
-  <button data-tab="playground">playground</button>
-  <button data-tab="models">models</button>
-  <button data-tab="providers">providers</button>
-  <button data-tab="analytics">analytics</button>
-  <button data-tab="security">security</button>
-  <button data-tab="settings">settings</button>
-</nav>
+  <div class="main-col">
+    <header class="topbar">
+      <h2 id="pageTitle">Overview</h2>
+      <span class="spacer"></span>
+      <label class="inline-label" for="strategy">Routing</label>
+      <select id="strategy" title="How the router picks a model"></select>
+      <button id="refreshBtn" title="Ask every provider for its model list again">Refresh catalog</button>
+    </header>
 
-<main>
-  <section class="page active" data-page="overview">
-    <section class="wide">
-      <h2>Status</h2>
-      <div class="cards" id="cards"></div>
-    </section>
-    <section class="wide">
-      <h2>API endpoints</h2>
-      <div class="cards">
-        <div class="card endpoint"><span>OpenAI compatible base URL</span><code id="openaiEndpoint"></code><button data-copy="openai">copy</button></div>
-        <div class="card endpoint"><span>Anthropic Messages endpoint</span><code id="anthropicEndpoint"></code><button data-copy="anthropic">copy</button></div>
-      </div>
-      <div class="muted">Use a client API key with your provider. Create and revoke client keys in Security below.</div>
-    </section>
-    <section>
-      <h2>Providers</h2>
-      <table><thead><tr><th>provider</th><th>keys</th><th></th></tr></thead>
-      <tbody id="providersSummary"></tbody></table>
-    </section>
-    <section>
-      <h2>Probe</h2>
-      <div class="cards" id="probeCards"></div>
-      <div class="muted">Unhealthy models are probed for revival; healthy standbys stay pre-warmed.</div>
-    </section>
-  </section>
-
-  <section class="page" data-page="playground">
-    <section class="wide">
-      <h2>Playground</h2>
-      <div class="toolbar">
-        <select id="pgModel" title="model to talk to"><option value="auto">auto — router decides</option></select>
-        <input id="pgSystem" type="text" placeholder="system prompt (optional — applies to every turn)">
-        <label class="toolbar-label" title="temperature">temp <input id="pgTemp" type="number" min="0" max="2" step="0.1" value="0.7"></label>
-        <input id="pgMaxTokens" type="number" min="1" step="64" placeholder="max tokens">
-        <label><input type="checkbox" id="pgStream" checked> stream</label>
-        <button id="pgClear">clear</button>
-      </div>
-      <div id="pgChat" class="chat" aria-live="polite"></div>
-      <div class="pg-composer toolbar">
-        <textarea id="pgInput" rows="2" placeholder="message the router — Enter sends, Shift+Enter newline"></textarea>
-        <div class="pg-buttons">
-          <button id="pgSend">send</button>
-          <button id="pgStop" class="danger hidden">stop</button>
-          <button id="pgRegen" class="hidden">regenerate</button>
+    <main>
+      <!-- ============ overview ============ -->
+      <section class="page active" data-page="overview">
+        <div class="panel pool">
+          <h3>Pool</h3>
+          <p class="headline" id="poolHeadline">Loading</p>
+          <div id="poolBar" class="pulse" role="group" aria-label="Models by status"></div>
+          <div id="poolLegend" class="legend"></div>
+          <p class="muted" id="poolHelp"></p>
         </div>
-      </div>
-      <div class="muted">Dashboard session — no client key needed; every turn is attributed to 'playground' in Analytics. Auto routes by strategy; pin a model to force it.</div>
-    </section>
-  </section>
 
-  <section class="page" data-page="models">
-    <section class="wide">
-      <h2>Model viewer</h2>
-      <div class="toolbar">
-        <input id="modelFilter" type="text" placeholder="filter by model or provider">
-        <label><input type="checkbox" id="freeOnly"> free only</label>
-        <select id="providerFilter" title="provider filter"><option value="all">all providers</option></select>
-        <select id="sortModels" title="sort order">
-          <option value="score">sort: score</option>
-          <option value="traffic">sort: traffic</option>
-          <option value="ms">sort: latency</option>
-          <option value="model">sort: name</option>
-          <option value="provider">sort: provider</option>
-        </select>
-        <span class="muted" id="modelCount"></span>
-      </div>
-      <table><thead><tr>
-        <th class="sortable" data-sort="model">model</th>
-        <th class="sortable" data-sort="provider">provider</th>
-        <th class="sortable" data-sort="score">score</th>
-        <th>state</th>
-        <th class="sortable" data-sort="traffic">ok/fail</th>
-        <th class="sortable" data-sort="ms">ms</th>
-        <th>actions</th>
-      </tr></thead>
-      <tbody id="routes"></tbody></table>
-      <div class="muted" id="tryResult" aria-live="polite"></div>
-    </section>
-  </section>
-
-  <section class="page" data-page="providers">
-    <section>
-      <h2>Providers</h2>
-      <div class="toolbar"><button id="testAllBtn" title="minimal authenticated ping per enabled provider — never persisted">test all keys</button><span class="muted">keys never leave the server · masked everywhere · stored encrypted on Cloudflare</span></div>
-      <table><thead><tr><th>provider</th><th>keys</th><th></th></tr></thead>
-      <tbody id="providers"></tbody></table>
-      <form class="row" id="keyForm">
-        <select id="keyProvider"></select>
-        <input type="password" id="keyValue" placeholder="new provider key (write-only)" autocomplete="off">
-        <button type="button" id="keyTestBtn" title="validate against the provider without saving">test key</button>
-        <button>add key</button>
-      </form>
-      <div class="err" id="keyErr"></div>
-    </section>
-    <section>
-      <h2>Custom endpoints</h2>
-      <p class="muted">Bring any OpenAI-compatible service: name + API base URL + the key that service issued. Models appear as <code>name:model-id</code>. Probe first to verify the endpoint answers, then add it.</p>
-      <form id="compatForm" class="stack">
-        <label for="compatName">Endpoint name</label>
-        <input id="compatName" type="text" maxlength="64" placeholder="for example: local-llama" autocomplete="off" required>
-        <small class="muted">Used as the model prefix. Use a distinct name for each endpoint.</small>
-        <label for="compatBaseUrl">API base URL</label>
-        <input id="compatBaseUrl" type="url" placeholder="https://host.example/v1" autocomplete="url" required>
-        <small class="muted">Include the API path such as <code>/v1</code> when required. Do not include a key or query parameters.</small>
-        <label for="compatApiKey">Upstream API key</label>
-        <input id="compatApiKey" type="password" placeholder="key from this provider" autocomplete="new-password" required>
-        <small class="muted">This is the key for the service above, not your dashboard password or router client key.</small>
-        <div class="inline">
-          <button type="button" id="compatProbeBtn">probe endpoint</button>
-          <button type="submit">add endpoint</button>
+        <div class="panel connect">
+          <h3>Connect a client</h3>
+          <div class="field-row"><span class="field-label">OpenAI-compatible base URL</span><code id="openaiEndpoint"></code><button data-copy="openai">Copy</button></div>
+          <div class="field-row"><span class="field-label">Anthropic Messages endpoint</span><code id="anthropicEndpoint"></code><button data-copy="anthropic">Copy</button></div>
+          <pre id="curlSample" class="code"></pre>
+          <p class="muted">Clients sign in with a client key, not the dashboard password. Create one under Security.</p>
         </div>
-      </form>
-      <div class="err" id="compatErr" role="alert" aria-live="polite"></div>
-      <div class="muted" id="probeResult" aria-live="polite"></div>
-      <table><thead><tr><th>endpoint</th><th>base URL</th><th>state</th><th></th></tr></thead><tbody id="compatInstances"></tbody></table>
-    </section>
-  </section>
 
-  <section class="page" data-page="security">
-    <section>
-      <h2>Security</h2>
-      <div class="cards" id="secCards"></div>
-    </section>
-    <section>
-      <h2>Client API keys</h2>
-      <p class="muted">Separate from the dashboard password. Use a client key in OpenAI or Anthropic API settings. A new key is shown only once.</p>
-      <form class="row" id="clientKeyForm"><input id="clientKeyName" type="text" maxlength="64" placeholder="key name (for example: Cline)" required><button>create API key</button></form>
-      <div class="err" id="clientKeyErr"></div>
-      <div id="clientKeyOnce" class="hidden"><input type="text" id="clientKeyValue" readonly><button type="button" id="copyClientKey">copy key</button></div>
-      <table><thead><tr><th>name</th><th>created</th><th></th></tr></thead><tbody id="clientKeys"></tbody></table>
-    </section>
-  </section>
+        <div class="panel wide">
+          <h3>Free providers</h3>
+          <p class="muted">These serve free models without an account. Anonymous tiers share a per-IP quota, so heavy use is better with your own token.</p>
+          <div id="freeLanes" class="lanes"></div>
+        </div>
 
-  <section class="page" data-page="analytics">
-    <section class="wide">
-      <h2>Usage</h2>
-      <div class="cards" id="usageCards"></div>
-      <h3>Requests + success rate per hour</h3>
-      <div class="toolbar">
-        <select id="usageWindow" title="history window">
-          <option value="24">last 24h</option>
-          <option value="168">last 7 days</option>
-        </select>
-        <span class="muted" id="usagePersisted"></span>
-        <span style="flex:1"></span>
-        <button id="usageResetBtn" class="danger">reset ledger</button>
-      </div>
-      <div id="usageChart"></div>
-      <div class="chart-grid">
-        <div><h3>avg latency / hour</h3><div id="usageLatChart"></div></div>
-        <div><h3>tokens out / hour</h3><div id="usageTokChart"></div></div>
-      </div>
-    </section>
-    <section>
-      <h2>By provider</h2>
-      <table><thead><tr><th>provider</th><th>req</th><th>ok %</th><th>tokens in/out</th><th>avg ms</th><th>share</th></tr></thead>
-      <tbody id="usageProviders"></tbody></table>
-    </section>
-    <section>
-      <h2>Top models</h2>
-      <table><thead><tr><th>#</th><th>model</th><th>provider</th><th>req</th><th>ok/fail</th><th>tokens in/out</th><th>avg ms</th></tr></thead>
-      <tbody id="usageModels"></tbody></table>
-    </section>
-    <section>
-      <h2>By client key</h2>
-      <table><thead><tr><th>name</th><th>req</th><th>ok/fail</th><th>last used</th></tr></thead>
-      <tbody id="usageKeys"></tbody></table>
-    </section>
-    <section>
-      <h2>Live activity</h2>
-      <div id="log"></div>
-    </section>
-    <section>
-      <h2>Audit trail</h2>
-      <div class="toolbar"><button id="auditRefreshBtn">reload</button><span class="muted">every dashboard mutation, newest first — never secrets</span></div>
-      <div id="audit"></div>
-    </section>
-  </section>
+        <div class="panel wide">
+          <h3>Providers that use your keys</h3>
+          <div id="keyedSummary" class="lanes"></div>
+        </div>
+      </section>
 
-  <section class="page" data-page="settings">
-    <section>
-      <h2>Routing</h2>
-      <form id="settingsForm" class="stack">
-        <label for="setName">Router name</label>
-        <input id="setName" type="text" maxlength="64">
-        <label for="setPool">Model pool</label>
-        <select id="setPool">
-          <option value="all">all — every model a key can reach (runtime billing demotion guards cost)</option>
-          <option value="free">free — only models with free-tier evidence</option>
-        </select>
-        <label for="setDefaultModel">Default model</label>
-        <input id="setDefaultModel" type="text" list="modelIds" placeholder="used when a client asks for an unknown or paid id">
-        <small class="muted">Leave empty to keep pure strategy order for unknown ids.</small>
-        <label for="setAliases">Model aliases</label>
-        <textarea id="setAliases" placeholder="fast = groq:llama-3.3-70b&#10;smart = zen:claude-haiku"></textarea>
-        <small class="muted">One per line as <code>alias = model-id</code>. Clients request the alias; you can retarget it anytime.</small>
-      </form>
-    </section>
-    <section>
-      <h2>Scoring</h2>
-      <p class="muted">How the <code>smartest</code> strategy ranks models — your weights, not hardcoded ones. Weights renormalize automatically; 'verified' counts only for models with free-tier evidence.</p>
-      <div id="weightSliders"></div>
-      <div class="toolbar">
-        <button id="weightsSave">save weights</button>
-        <button id="weightsReset">reset defaults</button>
-        <span class="ok-msg" id="weightsMsg" aria-live="polite"></span>
-      </div>
-      <h3>Preview — top 5 under these weights</h3>
-      <div id="weightsPreview"></div>
-    </section>
-    <section>
-      <h2>Layers</h2>
-      <form id="layersForm" class="stack">
-        <div class="inline"><input type="checkbox" id="setStealth"><label for="setStealth">Stealth — hide real model ids from clients</label></div>
-        <label for="setStealthAlias">Stealth alias</label>
-        <input id="setStealthAlias" type="text" maxlength="64">
-        <div class="inline"><input type="checkbox" id="setScrub"><label for="setScrub">Scrub model ids from assistant text too</label></div>
-        <div class="inline"><input type="checkbox" id="setPersona"><label for="setPersona">Persona — prepend the system persona</label></div>
-        <div class="inline"><input type="checkbox" id="setDecision"><label for="setDecision">Decision plane — Jev classify/diagnose (free, fail-open)</label></div>
-        <label for="setCompaction">Compaction strategy</label>
-        <select id="setCompaction">
-          <option value="summarize">summarize — condense old turns with one free-model call</option>
-          <option value="truncate-oldest">truncate-oldest — drop oldest turns that do not fit</option>
-        </select>
-        <label for="setCatalogMinutes">Catalog refresh (minutes)</label>
-        <input id="setCatalogMinutes" type="number" min="1" step="1">
-        <label for="setProbeMs">Probe interval (ms)</label>
-        <input id="setProbeMs" type="number" min="1000" step="1000">
-        <label for="setStandby">Pre-warmed standbys</label>
-        <input id="setStandby" type="number" min="0" max="10" step="1">
-        <button type="submit">save settings</button>
-        <div class="ok-msg" id="settingsMsg" aria-live="polite"></div>
-      </form>
-    </section>
-    <datalist id="modelIds"></datalist>
-  </section>
-</main>
+      <!-- ============ models ============ -->
+      <section class="page" data-page="models">
+        <div class="panel wide">
+          <div class="toolbar">
+            <input id="modelFilter" type="search" placeholder="Search models or providers" aria-label="Search models">
+            <select id="providerFilter" aria-label="Provider"><option value="all">All providers</option></select>
+            <select id="sortModels" aria-label="Sort order">
+              <option value="status">Sort by status</option>
+              <option value="score">Sort by score</option>
+              <option value="ms">Sort by speed</option>
+              <option value="traffic">Sort by traffic</option>
+              <option value="model">Sort by name</option>
+              <option value="provider">Sort by provider</option>
+            </select>
+            <label class="check"><input type="checkbox" id="freeOnly"> Free only</label>
+          </div>
+          <div id="statusChips" class="chips" role="group" aria-label="Filter by status"></div>
+          <div class="toolbar">
+            <span class="muted" id="modelCount" aria-live="polite"></span>
+            <span class="spacer"></span>
+            <button id="verifyShownBtn" title="Send one tiny request to each model shown">Test shown models</button>
+            <button id="verifyStopBtn" class="hidden">Stop</button>
+          </div>
+          <div class="muted" id="verifyProgress" aria-live="polite"></div>
+          <ul id="routes" class="mlist"></ul>
+          <div class="muted" id="tryResult" aria-live="polite"></div>
+        </div>
+
+        <details class="panel wide fold" id="filteredBox">
+          <summary><span id="filteredTitle">Filtered out (not chat models)</span></summary>
+          <p class="muted">The router only keeps models that answer text chat. Image, video, audio, embedding and similar models are left out of the pool. If one is wrongly filtered, allow it.</p>
+          <div class="toolbar"><select id="filteredKind" aria-label="Kind"><option value="all">All kinds</option></select></div>
+          <ul id="filteredRows" class="mlist compact"></ul>
+        </details>
+
+        <details class="panel wide fold" id="offBox">
+          <summary><span id="offTitle">Disabled and blocked</span></summary>
+          <ul id="offRows" class="mlist compact"></ul>
+        </details>
+      </section>
+
+      <!-- ============ providers ============ -->
+      <section class="page" data-page="providers">
+        <div class="panel wide" id="storageBanner" hidden>
+          <h3>Key storage is not set up</h3>
+          <p>This deployment cannot save keys yet. Set a 32-byte secret named <code>COMPAT_CREDENTIALS_KEY</code>, then deploy again.</p>
+          <pre class="code">node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+npx cf secret put COMPAT_CREDENTIALS_KEY</pre>
+        </div>
+
+        <div class="panel wide">
+          <h3>Free providers</h3>
+          <div id="freeLanes2" class="lanes"></div>
+        </div>
+
+        <div class="panel wide">
+          <div class="toolbar"><h3>Providers that need a key</h3><span class="spacer"></span><button id="testAllBtn" title="One tiny authenticated request per enabled provider. Nothing is saved.">Test all keys</button></div>
+          <div id="providerList" class="plist"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Add keys</h3>
+          <form id="keyForm" class="stack">
+            <label for="keyProvider">Provider</label>
+            <select id="keyProvider"></select>
+            <label for="keyValue">Key or token</label>
+            <textarea id="keyValue" rows="3" placeholder="Paste one key per line" autocomplete="off" spellcheck="false"></textarea>
+            <small class="muted">Keys are write-only. After saving they are only shown masked.</small>
+            <div class="inline">
+              <button type="button" id="keyTestBtn" title="Check the first key against the provider without saving it">Test first key</button>
+              <button type="submit" class="primary">Add keys</button>
+            </div>
+            <div class="err" id="keyErr" role="status" aria-live="polite"></div>
+          </form>
+        </div>
+
+        <div class="panel">
+          <h3>Custom endpoints</h3>
+          <p class="muted">Any OpenAI-compatible service. Its models appear as <code>name:model-id</code>.</p>
+          <form id="compatForm" class="stack">
+            <label for="compatName">Name</label>
+            <input id="compatName" type="text" maxlength="64" placeholder="local-llama" autocomplete="off" required>
+            <label for="compatBaseUrl">API base URL</label>
+            <input id="compatBaseUrl" type="url" placeholder="https://host.example/v1" autocomplete="url" required>
+            <small class="muted">Include the version path such as <code>/v1</code>. Use https unless the host is on your own machine.</small>
+            <label for="compatApiKey">Key for that service</label>
+            <input id="compatApiKey" type="password" placeholder="Key issued by the service" autocomplete="new-password" required>
+            <div class="inline">
+              <button type="button" id="compatProbeBtn">Probe endpoint</button>
+              <button type="submit" class="primary">Add endpoint</button>
+            </div>
+          </form>
+          <div class="err" id="compatErr" role="alert" aria-live="polite"></div>
+          <div class="muted" id="probeResult" aria-live="polite"></div>
+          <ul id="compatInstances" class="mlist compact"></ul>
+        </div>
+      </section>
+
+      <!-- ============ playground ============ -->
+      <section class="page" data-page="playground">
+        <div class="panel wide">
+          <div class="toolbar">
+            <select id="pgModel" aria-label="Model"><option value="auto">Auto: the router decides</option></select>
+            <input id="pgSystem" type="text" placeholder="System prompt (optional)" aria-label="System prompt">
+            <label class="check" title="Temperature">Temp <input id="pgTemp" type="number" min="0" max="2" step="0.1" value="0.7"></label>
+            <input id="pgMaxTokens" type="number" min="1" step="64" placeholder="Max tokens" aria-label="Max tokens">
+            <label class="check"><input type="checkbox" id="pgStream" checked> Stream</label>
+            <button id="pgClear">Clear</button>
+          </div>
+          <div id="pgChat" class="chat" aria-live="polite"></div>
+          <div class="pg-composer toolbar">
+            <textarea id="pgInput" rows="2" placeholder="Message the router. Enter sends, Shift+Enter adds a line." aria-label="Message"></textarea>
+            <div class="pg-buttons">
+              <button id="pgSend" class="primary">Send</button>
+              <button id="pgStop" class="danger hidden">Stop</button>
+              <button id="pgRegen" class="hidden">Regenerate</button>
+            </div>
+          </div>
+          <p class="muted">Uses your dashboard session, so no client key is needed. Turns are counted as "playground" in Analytics.</p>
+        </div>
+      </section>
+
+      <!-- ============ analytics ============ -->
+      <section class="page" data-page="analytics">
+        <div class="panel wide">
+          <h3>Usage</h3>
+          <div class="cards" id="usageCards"></div>
+          <h4>Requests and success rate per hour</h4>
+          <div class="toolbar">
+            <select id="usageWindow" aria-label="History window">
+              <option value="24">Last 24 hours</option>
+              <option value="168">Last 7 days</option>
+            </select>
+            <span class="muted" id="usagePersisted"></span>
+            <span class="spacer"></span>
+            <button id="usageResetBtn" class="danger">Reset ledger</button>
+          </div>
+          <div id="usageChart"></div>
+          <div class="chart-grid">
+            <div><h4>Average latency per hour</h4><div id="usageLatChart"></div></div>
+            <div><h4>Tokens out per hour</h4><div id="usageTokChart"></div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>By provider</h3>
+          <table><thead><tr><th>Provider</th><th>Requests</th><th>OK</th><th>Tokens in/out</th><th>Avg ms</th><th>Share</th></tr></thead><tbody id="usageProviders"></tbody></table>
+        </div>
+        <div class="panel">
+          <h3>Top models</h3>
+          <table><thead><tr><th>#</th><th>Model</th><th>Provider</th><th>Requests</th><th>OK/fail</th><th>Tokens in/out</th><th>Avg ms</th></tr></thead><tbody id="usageModels"></tbody></table>
+        </div>
+        <div class="panel">
+          <h3>By client key</h3>
+          <table><thead><tr><th>Name</th><th>Requests</th><th>OK/fail</th><th>Last used</th></tr></thead><tbody id="usageKeys"></tbody></table>
+        </div>
+        <div class="panel">
+          <h3>Live activity</h3>
+          <div id="log"></div>
+        </div>
+        <div class="panel wide">
+          <h3>Audit trail</h3>
+          <div class="toolbar"><button id="auditRefreshBtn">Reload</button><span class="muted">Every dashboard change and sign-in, newest first. Never contains secrets.</span></div>
+          <div id="audit"></div>
+        </div>
+      </section>
+
+      <!-- ============ security ============ -->
+      <section class="page" data-page="security">
+        <div class="panel wide">
+          <h3>Status</h3>
+          <div id="secWarnings"></div>
+          <dl class="facts" id="secFacts"></dl>
+        </div>
+
+        <div class="panel">
+          <h3>Access limits</h3>
+          <form id="accessForm" class="stack">
+            <label for="secRate">Requests per minute, per IP</label>
+            <input id="secRate" type="number" min="0" step="1">
+            <small class="muted">Applies to the API and to dashboard changes. 0 turns it off.</small>
+            <label for="secIps">Allowed IP addresses</label>
+            <textarea id="secIps" rows="3" placeholder="Empty means any address" spellcheck="false"></textarea>
+            <small class="muted">One per line. When set, every other address is refused, including the API. Your address right now: <code id="yourIp">checking</code> <button type="button" id="addMyIp" class="link">Add it</button></small>
+            <label for="secSession">Stay signed in for (hours)</label>
+            <input id="secSession" type="number" min="1" max="720" step="1">
+            <label for="secFailures">Failed sign-ins before a lockout</label>
+            <input id="secFailures" type="number" min="3" max="50" step="1">
+            <div class="inline"><button type="submit" class="primary">Save access limits</button></div>
+            <div class="ok-msg" id="accessMsg" aria-live="polite"></div>
+          </form>
+        </div>
+
+        <div class="panel">
+          <h3>Sessions</h3>
+          <p class="muted">Signing in sets a cookie that only your browser can send. The password itself is never stored in the page.</p>
+          <div class="inline"><button id="signOutAll" class="danger">Sign out everywhere</button></div>
+          <p class="muted">Ends every session on every device. Changing the dashboard password does the same.</p>
+        </div>
+
+        <div class="panel wide">
+          <h3>Client API keys</h3>
+          <p class="muted">These are what apps use to call the router. They are separate from the dashboard password. A new key is shown once.</p>
+          <form id="clientKeyForm" class="row">
+            <input id="clientKeyName" type="text" maxlength="64" placeholder="Name, for example Cline" aria-label="Key name" required>
+            <button class="primary" type="submit">Create key</button>
+          </form>
+          <div class="err" id="clientKeyErr" role="alert"></div>
+          <div id="clientKeyOnce" class="banner hidden">
+            <b>Copy this key now. It will not be shown again.</b>
+            <div class="field-row"><input type="text" id="clientKeyValue" readonly aria-label="New client key"><button type="button" id="copyClientKey">Copy key</button></div>
+          </div>
+          <ul id="clientKeys" class="mlist compact"></ul>
+        </div>
+      </section>
+
+      <!-- ============ settings ============ -->
+      <section class="page" data-page="settings">
+        <form id="settingsForm" class="panel wide settings">
+          <fieldset>
+            <legend>Routing</legend>
+            <label for="setName">Router name</label>
+            <input id="setName" type="text" maxlength="64">
+            <label for="setPool">Model pool</label>
+            <select id="setPool">
+              <option value="free">Free only: models with free-tier evidence</option>
+              <option value="all">Everything a key can reach: billing protection still applies</option>
+            </select>
+            <label for="setDefaultModel">Default model</label>
+            <input id="setDefaultModel" type="text" list="modelIds" placeholder="Used when a client asks for an unknown model">
+            <small class="muted">Leave empty to follow the routing strategy for unknown names.</small>
+            <label for="setAliases">Model aliases</label>
+            <textarea id="setAliases" rows="3" placeholder="fast = groq:llama-3.3-70b"></textarea>
+            <small class="muted">One per line as <code>alias = model-id</code>. Clients request the alias.</small>
+          </fieldset>
+
+          <fieldset>
+            <legend>Model filtering</legend>
+            <label for="setForceChat">Allowed as chat models</label>
+            <textarea id="setForceChat" rows="3" placeholder="model ids, one per line" spellcheck="false"></textarea>
+            <small class="muted">Models the filter wrongly removed (see Models, Filtered out). They are added to the pool on save.</small>
+          </fieldset>
+
+          <fieldset>
+            <legend>Layers</legend>
+            <div class="inline"><input type="checkbox" id="setStealth"><label for="setStealth">Stealth: hide real model names from clients</label></div>
+            <label for="setStealthAlias">Stealth name</label>
+            <input id="setStealthAlias" type="text" maxlength="64">
+            <div class="inline"><input type="checkbox" id="setScrub"><label for="setScrub">Also scrub model names from reply text</label></div>
+            <div class="inline"><input type="checkbox" id="setPersona"><label for="setPersona">Persona: prepend the system persona</label></div>
+            <div class="inline"><input type="checkbox" id="setDecision"><label for="setDecision">Decision plane: classify and diagnose (free, fails open)</label></div>
+            <label for="setCompaction">When a chat is too long</label>
+            <select id="setCompaction">
+              <option value="summarize">Summarize old turns with one free-model call</option>
+              <option value="truncate-oldest">Drop the oldest turns</option>
+            </select>
+          </fieldset>
+
+          <fieldset>
+            <legend>Background checks</legend>
+            <label for="setCatalogMinutes">Refresh the model list every (minutes)</label>
+            <input id="setCatalogMinutes" type="number" min="1" step="1">
+            <label for="setProbeSec">Revive and warm-up check every (seconds)</label>
+            <input id="setProbeSec" type="number" min="1" step="1">
+            <label for="setStandby">Pre-warmed standby models</label>
+            <input id="setStandby" type="number" min="0" max="10" step="1">
+            <label for="setSweepMin">Test every model every (minutes)</label>
+            <input id="setSweepMin" type="number" min="1" step="1">
+            <small class="muted">Only runs while the router is in use. Free tiers cap how many checks each provider gets per hour, so checks never use up the quota your requests need.</small>
+          </fieldset>
+
+          <div id="saveBar" class="savebar">
+            <span id="settingsMsg" class="ok-msg" aria-live="polite"></span>
+            <span class="spacer"></span>
+            <button type="button" id="settingsRevert">Discard changes</button>
+            <button type="submit" id="settingsSave" class="primary">Save settings</button>
+          </div>
+        </form>
+
+        <div class="panel wide">
+          <h3>Scoring</h3>
+          <p class="muted">How the smartest strategy ranks models. Weights renormalize automatically, and the verified weight only counts for models with free-tier evidence.</p>
+          <div id="weightSliders"></div>
+          <div class="toolbar">
+            <button id="weightsSave" class="primary">Save weights</button>
+            <button id="weightsReset">Reset to defaults</button>
+            <span class="ok-msg" id="weightsMsg" aria-live="polite"></span>
+          </div>
+          <h4>Top 5 with these weights</h4>
+          <div id="weightsPreview"></div>
+        </div>
+        <datalist id="modelIds"></datalist>
+      </section>
+    </main>
+  </div>
+</div>
 
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="/dashboard.js"></script>
 <script src="/dashboard-models.js"></script>
 <script src="/dashboard-playground.js"></script>
-<script src="/dashboard-pages.js"></script>
+<script src="/dashboard-providers.js"></script>
+<script src="/dashboard-security.js"></script>
 <script src="/dashboard-analytics.js"></script>
 <script src="/dashboard-settings.js"></script>
 </body>

@@ -1,5 +1,6 @@
 // @body:organ=muscle type=provider role="generic OpenAI-compatible adapter: multi-instance /models + chat passthrough"
 import { mergeDiscovered } from '../discovery.mjs';
+import { listJsonModels } from './listing.mjs';
 
 export const id = 'openai-compat';
 const LIST_TIMEOUT_MS = 30_000;
@@ -30,24 +31,28 @@ export function protocolOf() {
 
 // Model ids served to clients are `${prefix}:${upstreamId}` so multiple
 // instances (and other providers) never collide in the catalog.
-export async function listModelIds(cfg, { signal } = {}) {
-  const ids = [];
+export async function listModels(cfg, { signal } = {}) {
+  const out = [];
   for (const inst of instances(cfg)) {
     const prefix = inst.prefix ? `${inst.prefix}:` : '';
     if (Array.isArray(inst.models) && inst.models.length > 0) {
-      for (const m of inst.models) ids.push(prefix + m);
+      for (const m of inst.models) out.push({ id: prefix + m, meta: null });
       continue;
     }
     const base = inst.baseUrl.replace(/\/+$/, '');
-    const res = await fetch(`${base}/models`, {
-      signal: signal ?? AbortSignal.timeout(LIST_TIMEOUT_MS),
+    const rows = await listJsonModels(`${base}/models`, {
+      signal,
+      timeoutMs: LIST_TIMEOUT_MS,
+      label: `openai-compat(${inst.name || inst.prefix || base})`,
       headers: inst.apiKey ? { authorization: `Bearer ${inst.apiKey}` } : {},
     });
-    if (!res.ok) throw new Error(`openai-compat(${inst.name || inst.prefix || base}) listModels HTTP ${res.status}`);
-    const json = await res.json();
-    for (const m of json.data ?? []) if (typeof m?.id === 'string') ids.push(prefix + m.id);
+    for (const row of rows) out.push({ id: prefix + row.id, meta: row.meta });
   }
-  return ids;
+  return out;
+}
+
+export async function listModelIds(cfg, opts) {
+  return (await listModels(cfg, opts)).map((m) => m.id);
 }
 
 // Compat sources make no free claims — open-pool surfaces them; billing

@@ -29,7 +29,7 @@ const state = {
 function modelState(id) {
   let e = state.models.get(id);
   if (!e) {
-    e = { latencyMs: null, ok: 0, fail: 0, consecutiveFails: 0, throttleLevel: 0, throttledUntil: 0, unhealthyUntil: 0, lastUsedAt: 0, lastProbeAt: 0 };
+    e = { latencyMs: null, ok: 0, fail: 0, consecutiveFails: 0, throttleLevel: 0, throttledUntil: 0, unhealthyUntil: 0, lastUsedAt: 0, lastProbeAt: 0, recent: [] };
     state.models.set(id, e);
   }
   return e;
@@ -54,6 +54,20 @@ export function healthyCandidates() {
 export function isUnhealthy(modelId, now = Date.now()) {
   const e = state.models.get(modelId);
   return e ? now < e.unhealthyUntil : false;
+}
+
+const RECENT_MAX = 12;
+
+function pushRecent(entry, ok) {
+  entry.recent ??= [];
+  entry.recent.push(ok ? 1 : 0);
+  if (entry.recent.length > RECENT_MAX) entry.recent.shift();
+}
+
+// Last-N outcome strip for the dashboard (1 = ok, 0 = failed): real requests,
+// probes and manual verifications all feed it.
+export function recordOutcome(modelId, ok) {
+  pushRecent(modelState(modelId), ok);
 }
 
 export function recordProbe(modelId, at = Date.now()) {
@@ -139,6 +153,7 @@ function throttle(entry) {
 
 function recordFailure(entry, cred, provider, kind) {
   entry.fail += 1;
+  pushRecent(entry, false);
   entry.consecutiveFails += 1;
   if (kind === 'ratelimit') throttle(entry);
   if ((kind === 'transient' || kind === 'notfound' || kind === 'freetier') && entry.consecutiveFails >= UNHEALTHY_FAILS) {
@@ -165,6 +180,7 @@ function applyFailure(cfg, provider, model, entry, cred, kind, detail) {
 
 function recordSuccess(entry, ms) {
   entry.ok += 1;
+  pushRecent(entry, true);
   entry.consecutiveFails = 0;
   entry.throttleLevel = 0;
   entry.latencyMs = entry.latencyMs == null ? ms : Math.round(entry.latencyMs * 0.7 + ms * 0.3);

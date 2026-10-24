@@ -1,6 +1,7 @@
 // @body:organ=muscle type=provider role="OpenRouter adapter: :free-suffix + zero-priced models"
 import { enabledKeyEntries } from '../config.mjs';
 import { mergeDiscovered } from '../discovery.mjs';
+import { listJsonModels } from './listing.mjs';
 
 export const id = 'openrouter';
 const DEFAULT_BASE = 'https://openrouter.ai/api/v1';
@@ -28,19 +29,18 @@ export function protocolOf() {
   return 'chat';
 }
 
-export async function listModelIds(cfg, { signal } = {}) {
-  const res = await fetch(`${base(cfg)}/models`, { signal: signal ?? AbortSignal.timeout(LIST_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`openrouter listModels HTTP ${res.status}`);
-  const json = await res.json();
-  const ids = [];
+export async function listModels(cfg, { signal } = {}) {
+  const rows = await listJsonModels(`${base(cfg)}/models`, { signal, timeoutMs: LIST_TIMEOUT_MS, label: 'openrouter' });
   zeroPriced = new Set();
-  for (const m of json.data ?? []) {
-    if (!m?.id) continue;
-    ids.push(m.id);
-    const p = m.pricing;
-    if (p && Number(p.prompt) === 0 && Number(p.completion) === 0) zeroPriced.add(m.id);
+  for (const { id: modelId, meta } of rows) {
+    const p = meta.pricing;
+    if (p && Number(p.prompt) === 0 && Number(p.completion) === 0) zeroPriced.add(modelId);
   }
-  return ids;
+  return rows;
+}
+
+export async function listModelIds(cfg, opts) {
+  return (await listModels(cfg, opts)).map((m) => m.id);
 }
 
 export function freeSources(modelId, freeTable) {

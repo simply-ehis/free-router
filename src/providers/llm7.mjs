@@ -1,6 +1,7 @@
 // @body:organ=muscle type=provider role="LLM7.io adapter: OpenAI-compatible, key-optional free tier (anonymous `unused` key, 10 req/min on turbo models)"
 import { enabledKeyEntries } from '../config.mjs';
 import { mergeDiscovered } from '../discovery.mjs';
+import { listJsonModels } from './listing.mjs';
 
 export const id = 'llm7';
 const DEFAULT_BASE = 'https://api.llm7.io/v1';
@@ -28,11 +29,12 @@ export function protocolOf() {
   return 'chat';
 }
 
-export async function listModelIds(cfg, { signal } = {}) {
-  const res = await fetch(`${base(cfg)}/models`, { signal: signal ?? AbortSignal.timeout(LIST_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`llm7 listModels HTTP ${res.status}`);
-  const json = await res.json();
-  return (json.data ?? []).map((m) => m.id).filter(Boolean);
+export async function listModels(cfg, { signal } = {}) {
+  return listJsonModels(`${base(cfg)}/models`, { signal, timeoutMs: LIST_TIMEOUT_MS, label: 'llm7' });
+}
+
+export async function listModelIds(cfg, opts) {
+  return (await listModels(cfg, opts)).map((m) => m.id);
 }
 
 // LLM7's free token tier covers its turbo models; pro models need a balance.

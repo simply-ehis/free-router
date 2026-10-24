@@ -1,22 +1,19 @@
 // @body:organ=face type=dashboard role="dashboard API: config CRUD (atomic), keys write-only+masked, catalog refresh, route demote/reinstate, status, SSE events, audit log, hot-apply (Web-standard)"
-import path from 'node:path';
-import { ROOT, API_KEYS_PATH, saveConfig, maskKey, providerKeyEntries, validateConfig } from './config.mjs';
-import { refresh, demote, reinstate, getState as getCatalog, startCatalogLoop } from './catalog.mjs';
-import { getRoutesState, runChat } from './routes.mjs';
-import { scoreBreakdown } from './strategies/index.mjs';
+import { API_KEYS_PATH, saveConfigDurable, maskKey, validateConfig } from './config.mjs';
+import { refresh, demote, reinstate, startCatalogLoop, getState as getCatalog } from './catalog.mjs';
+import { runChat } from './routes.mjs';
 import { scoringSnapshot, setScoringWeights } from './scoring.mjs';
-import { getProbeState, startProbe, stopProbe } from './probe.mjs';
-import { byId } from './providers/index.mjs';
+import { startProbe, stopProbe, verifyModels } from './probe.mjs';
 import { bus } from './util/events.mjs';
-import { securityState } from './security.mjs';
-import { jsonRes, errRes, safeEqual, readBodyText } from './util/http.mjs';
+import { jsonRes, errRes, readBodyText } from './util/http.mjs';
+import { audit, auditTail } from './audit.mjs';
+import { sanitizeConfig, statusSnapshot } from './dashboardStatus.mjs';
+import { authenticate, handleLogin, handleLogout, handleSessionProbe, sameOriginRequest } from './dashboardAuth.mjs';
+import { remoteIp } from './security.mjs';
 import { store } from './store.mjs';
 import { logger } from './util/log.mjs';
 import { generateApiKey, hashApiKey, publicApiKeys } from './apiKeys.mjs';
 import { getUsage, resetUsage } from './usage.mjs';
-import { isWorkerRuntime } from './runtime.mjs';
-import { hasCompatCredentialsKey } from './compatCredentials.mjs';
-import { hasProviderCredentialsKey } from './providerCredentials.mjs';
 import { addKeys, removeKey, toggleKey } from './providerKeys.mjs';
 import { playgroundChat } from './playground.mjs';
 import { testProviders } from './providerTest.mjs';
@@ -24,115 +21,15 @@ import {
   probeCompatEndpoint, addCompatInstance, listCompatInstances, toggleCompatInstance, removeCompatInstance,
 } from './compatInstances.mjs';
 
-const AUDIT_PATH = path.join(ROOT, 'logs', 'audit.jsonl');
 const SSE_INTERVAL_MS = 2000;
 const SSE_HEARTBEAT_MS = 15_000;
 const MAX_SSE_CLIENTS = 8;
-const BOOT_AT = Date.now();
 let sseClients = 0;
 
 function randomHex(bytes) {
   const b = new Uint8Array(bytes);
   crypto.getRandomValues(b);
   return [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
-}
-
-function audit(action, detail = {}) {
-  try {
-    store.append(AUDIT_PATH, `${JSON.stringify({ at: new Date().toISOString(), action, ...detail })}\n`);
-  } catch (err) {
-    logger.warn('audit write failed', { error: err.message, action });
-  }
-}
-
-// Newest-first tail of the audit log; the read is capped so a huge file can
-// never stall a dashboard request.
-function auditTail(limit = 200) {
-  const raw = (store.read(AUDIT_PATH) ?? '').slice(-131_072);
-  const entries = [];
-  for (const line of raw.split('\n').filter(Boolean).slice(-limit).reverse()) {
-    try { entries.push(JSON.parse(line)); } catch { /* skip corrupt line */ }
-  }
-  return entries;
-}
-
-// Dashboard requests use the password; client API keys are separate credentials for /v1.
-function isDashboardAuthorized(request, url, password) {
-  const header = request.headers.get('authorization') ?? '';
-  const bearer = header.startsWith('Bearer ') ? header.slice(7) : request.headers.get('x-api-key') ?? '';
-  if (safeEqual(bearer, password)) return true;
-  if (url.pathname === '/api/events') return safeEqual(url.searchParams.get('key') ?? '', password);
-  return false;
-}
-
-export function sanitizeConfig(cfg) {
-  const out = structuredClone(cfg);
-  delete out.dashboardPassword;
-  delete out.apiKey;
-  delete out.apiKeys;
-  for (const [id, p] of Object.entries(out.providers ?? {})) {
-    if (Array.isArray(p.keys)) {
-      p.keys = p.keys.map((k) => (typeof k === 'string' ? maskKey(k) : { ...k, key: maskKey(k.key) }));
-    }
-    if (id === 'openai-compat' && Array.isArray(p.instances)) {
-      p.instances = p.instances.map((inst) => ({ ...inst, apiKey: inst.apiKey ? maskKey(inst.apiKey) : undefined }));
-    }
-  }
-  return out;
-}
-
-export function statusSnapshot(cfg) {
-  const catalog = getCatalog();
-  const routes = getRoutesState();
-  const routeStateById = Object.fromEntries(routes.models.map((m) => [m.id, m]));
-  const providers = Object.entries(cfg.providers ?? {}).map(([id, p]) => {
-    const creds = byId[id]?.listCredentials?.(cfg) ?? [];
-    return {
-      id,
-      enabled: p.enabled === true,
-      keys: creds.length,
-      discovered: creds.filter((c) => c.source).length,
-      configured: providerKeyEntries(p).length,
-    };
-  });
-  const counts = { total: catalog.models.length, ok: 0, unhealthy: 0, successes: 0, failures: 0, requests: 0 };
-  const modelsDetail = catalog.models.map((m) => {
-    const rs = routeStateById[m.id] ?? { latencyMs: null, ok: 0, fail: 0, consecutiveFails: 0, throttleLevel: 0, throttledUntil: 0, unhealthyUntil: 0, lastUsedAt: 0 };
-    if (rs.unhealthyUntil && rs.unhealthyUntil > Date.now()) counts.unhealthy += 1;
-    else counts.ok += 1;
-    counts.successes += rs.ok ?? 0;
-    counts.failures += rs.fail ?? 0;
-    counts.requests += (rs.ok ?? 0) + (rs.fail ?? 0);
-    const b = scoreBreakdown(m.id, { cfg, states: new Map([[m.id, rs]]), sources: new Map([[m.id, m.sources]]) });
-    return {
-      ...m,
-      ...rs,
-      score: Math.round(b.score * 100),
-      components: Object.fromEntries(Object.entries(b.components).map(([k, v]) => [k, Math.round(v * 100) / 100])),
-      weights: b.weights,
-      sources: m.sources,
-    };
-  });
-  const catalogSources = Object.fromEntries(catalog.models.map((m) => [m.id, m.sources]));
-  return {
-    name: cfg.name,
-    runtimePlatform: isWorkerRuntime() ? 'worker' : 'node',
-    compatCredentialsReady: !isWorkerRuntime() || hasCompatCredentialsKey(),
-    providerKeysReady: !isWorkerRuntime() || hasProviderCredentialsKey(),
-    uptimeSec: Math.round((Date.now() - BOOT_AT) / 1000),
-    strategy: cfg.selection?.strategy,
-    pool: cfg.selection?.pool ?? 'all',
-    decision: cfg.decision?.enabled ? cfg.decision.model : 'off',
-    models: { free: catalog.models.length, demoted: Object.keys(catalog.demoted).length, lastRefresh: catalog.lastRefresh, refreshOk: catalog.refreshOk },
-    routes: counts,
-    modelsDetail,
-    demoted: catalog.demoted,
-    blacklist: cfg.selection?.blacklist ?? [],
-    selectionPriorities: cfg.selection?.priorities ?? {},
-    providers,
-    probe: getProbeState(),
-    security: securityState(cfg),
-  };
 }
 
 // Allowlist patch: everything except secrets. Keys only via /api/keys (write-only).
@@ -145,15 +42,29 @@ function hasForbiddenKey(obj) {
   return false;
 }
 
+// Settings that decide pool membership. A change in any of them forces a refresh.
+function poolFingerprint(cfg) {
+  return JSON.stringify([
+    cfg.selection?.pool,
+    cfg.selection?.blacklist,
+    cfg.selection?.forceChat,
+    Object.entries(cfg.providers ?? {}).map(([id, p]) => [id, p.enabled]),
+  ]);
+}
+
 function loopIntervals(cfg) {
   return { catalog: cfg.refresh?.catalogMinutes, probe: cfg.probe?.intervalMs, warm: cfg.probe?.standbyWarm };
 }
 
-function applyConfigPatch(cfg, patch) {
+async function applyConfigPatch(cfg, patch) {
   if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return '`body` must be a JSON object';
   if (hasForbiddenKey(patch)) return 'Credential fields cannot be set here — use the dedicated key forms';
   const candidate = structuredClone(cfg);
-  for (const field of ['name', 'selection', 'probe', 'refresh', 'decision', 'security', 'stealth', 'persona', 'compaction', 'contextWindows']) {
+  if ('name' in patch) {
+    if (typeof patch.name !== 'string' || !patch.name.trim() || patch.name.trim().length > 64) return '`name` must be 1-64 characters';
+    candidate.name = patch.name.trim();
+  }
+  for (const field of ['selection', 'probe', 'refresh', 'decision', 'security', 'stealth', 'persona', 'compaction', 'contextWindows']) {
     if (field in patch) {
       if (patch[field] === null || typeof patch[field] !== 'object') return `\`${field}\` must be an object`;
       candidate[field] = { ...candidate[field], ...patch[field] };
@@ -172,7 +83,9 @@ function applyConfigPatch(cfg, patch) {
     return err.message.replace('config invalid: ', '');
   }
   const before = loopIntervals(cfg);
-  for (const field of ['name', 'selection', 'probe', 'refresh', 'decision', 'security', 'stealth', 'persona', 'compaction', 'contextWindows']) {
+  const poolBefore = poolFingerprint(cfg);
+  if ('name' in patch) cfg.name = candidate.name;
+  for (const field of ['selection', 'probe', 'refresh', 'decision', 'security', 'stealth', 'persona', 'compaction', 'contextWindows']) {
     if (field in patch) cfg[field] = candidate[field];
   }
   if ('providers' in patch) {
@@ -180,13 +93,16 @@ function applyConfigPatch(cfg, patch) {
       if (p !== null && typeof p === 'object' && 'enabled' in p) cfg.providers[id].enabled = p.enabled === true;
     }
   }
-  saveConfig(cfg);
+  await saveConfigDurable(cfg);
   const after = loopIntervals(cfg);
   if (after.catalog !== before.catalog) startCatalogLoop(cfg);
   if (after.probe !== before.probe || after.warm !== before.warm) {
     stopProbe();
     startProbe(cfg);
   }
+  // Anything that changes WHICH models are in the pool takes effect now, not
+  // at the next scheduled refresh (that gap made these settings look broken).
+  if (poolFingerprint(cfg) !== poolBefore) await refresh(cfg);
   return null;
 }
 
@@ -200,8 +116,20 @@ async function createClientKey(cfg, label) {
   const key = generateApiKey();
   const record = { id: randomHex(8), label: cleanLabel, hash: await hashApiKey(key), createdAt: new Date().toISOString(), enabled: true };
   cfg.apiKeys = [...(cfg.apiKeys ?? []), record];
-  store.write(API_KEYS_PATH, JSON.stringify(cfg.apiKeys));
+  await store.writeDurable(API_KEYS_PATH, JSON.stringify(cfg.apiKeys));
   return { key, keys: clientKeyList(cfg) };
+}
+
+async function toggleClientKey(request, cfg) {
+  let body;
+  try { body = JSON.parse(await readBodyText(request, 4096) || '{}'); } catch { return errRes(400, 'Invalid JSON body'); }
+  if (typeof body.id !== 'string' || typeof body.enabled !== 'boolean') return errRes(400, '`id` and boolean `enabled` required');
+  const record = (cfg.apiKeys ?? []).find((k) => k.id === body.id);
+  if (!record) return errRes(404, 'Unknown client key');
+  record.enabled = body.enabled;
+  await store.writeDurable(API_KEYS_PATH, JSON.stringify(cfg.apiKeys));
+  audit(body.enabled ? 'client_keys.enable' : 'client_keys.disable', { id: body.id });
+  return jsonRes(200, { keys: clientKeyList(cfg) });
 }
 
 function sseLoop(cfg) {
@@ -259,8 +187,21 @@ function sseLoop(cfg) {
   });
 }
 
-function handleGet(cfg, url) {
+// ids: explicit list | provider: every model of one provider | scope 'untested'.
+async function verifyEndpoint(cfg, body) {
+  const models = getCatalog().models.filter((m) => m.protocol === 'chat');
+  let ids;
+  if (Array.isArray(body.ids)) ids = body.ids.filter((id) => typeof id === 'string');
+  else if (typeof body.provider === 'string') ids = models.filter((m) => m.provider === body.provider).map((m) => m.id);
+  else return errRes(400, 'Send `ids` (list) or `provider`');
+  const results = await verifyModels(cfg, ids, { max: 12 });
+  audit('models.verify', { requested: ids.length, tested: results.length, ok: results.filter((r) => r.ok).length });
+  return jsonRes(200, { results, tested: results.length, remaining: Math.max(0, ids.length - results.length) });
+}
+
+function handleGet(cfg, url, request) {
   if (url.pathname === '/api/status') return jsonRes(200, statusSnapshot(cfg));
+  if (url.pathname === '/api/whoami') return jsonRes(200, { ip: remoteIp(request) });
   if (url.pathname === '/api/config') return jsonRes(200, sanitizeConfig(cfg));
   if (url.pathname === '/api/client-keys') return jsonRes(200, { keys: clientKeyList(cfg) });
   if (url.pathname === '/api/usage') return jsonRes(200, getUsage());
@@ -288,6 +229,7 @@ async function handlePut(request, cfg, url) {
     audit('keys.toggle', { provider: bodyK.provider, label: bodyK.label, enabled: bodyK.enabled });
     return jsonRes(200, { provider: bodyK.provider, ...outK });
   }
+  if (url.pathname === '/api/client-keys') return toggleClientKey(request, cfg);
   if (url.pathname !== '/api/config' && url.pathname !== '/api/openai-compat/instances') return errRes(404, `Unknown route: PUT ${url.pathname}`);
   let raw;
   try { raw = await readBodyText(request, 1024 * 1024); } catch (err) { return errRes(err.status ?? 413, 'Request body too large'); }
@@ -304,10 +246,8 @@ async function handlePut(request, cfg, url) {
     audit('openai_compat.toggle', { prefix: body.prefix, enabled: body.enabled });
     return jsonRes(200, { instance: out.instance, status: statusSnapshot(cfg) });
   }
-  const beforeBlacklist = JSON.stringify(cfg.selection?.blacklist ?? []);
-  const invalid = applyConfigPatch(cfg, body);
+  const invalid = await applyConfigPatch(cfg, body);
   if (invalid) return errRes(400, invalid);
-  if (beforeBlacklist !== JSON.stringify(cfg.selection?.blacklist ?? [])) await refresh(cfg);
   audit('config.update', { fields: Object.keys(body) });
   return jsonRes(200, sanitizeConfig(cfg));
 }
@@ -379,7 +319,7 @@ async function handlePost(request, cfg, url) {
   if (url.pathname === '/api/routes/blacklist') {
     if (typeof body.modelId !== 'string' || !body.modelId) return errRes(400, '`modelId` required');
     cfg.selection.blacklist = [...new Set([...(cfg.selection.blacklist ?? []), body.modelId])];
-    saveConfig(cfg);
+    await saveConfigDurable(cfg);
     demote(body.modelId, 'blacklisted');
     audit('routes.blacklist', { modelId: body.modelId });
     return jsonRes(200, statusSnapshot(cfg));
@@ -387,7 +327,7 @@ async function handlePost(request, cfg, url) {
   if (url.pathname === '/api/routes/unblacklist') {
     if (typeof body.modelId !== 'string' || !body.modelId) return errRes(400, '`modelId` required');
     cfg.selection.blacklist = (cfg.selection.blacklist ?? []).filter((id) => id !== body.modelId);
-    saveConfig(cfg);
+    await saveConfigDurable(cfg);
     reinstate(body.modelId);
     await refresh(cfg);
     audit('routes.unblacklist', { modelId: body.modelId });
@@ -397,9 +337,26 @@ async function handlePost(request, cfg, url) {
     if (typeof body.modelId !== 'string' || !body.modelId) return errRes(400, '`modelId` required');
     if (typeof body.priority !== 'number' || body.priority < 0 || body.priority > 1) return errRes(400, '`priority` must be between 0 and 1');
     cfg.selection.priorities = { ...(cfg.selection.priorities ?? {}), [body.modelId]: body.priority };
-    saveConfig(cfg);
+    await saveConfigDurable(cfg);
     audit('models.priority', { modelId: body.modelId, priority: body.priority });
     return jsonRes(200, statusSnapshot(cfg));
+  }
+  if (url.pathname === '/api/models/verify') return verifyEndpoint(cfg, body);
+  if (url.pathname === '/api/models/allow' || url.pathname === '/api/models/unallow') {
+    if (typeof body.modelId !== 'string' || !body.modelId) return errRes(400, '`modelId` required');
+    const allow = url.pathname.endsWith('/allow');
+    const current = cfg.selection.forceChat ?? [];
+    cfg.selection.forceChat = allow ? [...new Set([...current, body.modelId])] : current.filter((id) => id !== body.modelId);
+    await saveConfigDurable(cfg);
+    await refresh(cfg);
+    audit(allow ? 'models.allow_chat' : 'models.unallow_chat', { modelId: body.modelId });
+    return jsonRes(200, statusSnapshot(cfg));
+  }
+  if (url.pathname === '/api/logout-all') {
+    cfg.security.sessionEpoch = (cfg.security.sessionEpoch ?? 0) + 1;
+    await saveConfigDurable(cfg);
+    audit('auth.logout_all', {});
+    return handleLogout(url);
   }
   if (url.pathname === '/api/usage/reset') {
     resetUsage();
@@ -435,7 +392,7 @@ async function handleDelete(request, cfg, url) {
     const before = cfg.apiKeys.length;
     cfg.apiKeys = cfg.apiKeys.filter((key) => key.id !== body.id);
     if (cfg.apiKeys.length === before) return errRes(404, 'Unknown client key');
-    store.write(API_KEYS_PATH, JSON.stringify(cfg.apiKeys));
+    await store.writeDurable(API_KEYS_PATH, JSON.stringify(cfg.apiKeys));
     audit('client_keys.revoke', { id: body.id });
     return jsonRes(200, { keys: clientKeyList(cfg) });
   }
@@ -454,12 +411,15 @@ async function handleDelete(request, cfg, url) {
 }
 
 export async function handleDashboard(request, cfg, url) {
-  if (url.pathname === '/api/events') {
-    if (!isDashboardAuthorized(request, url, cfg.dashboardPassword ?? cfg.apiKey)) return errRes(401, 'Invalid dashboard password');
-    return sseLoop(cfg);
-  }
-  if (!isDashboardAuthorized(request, url, cfg.dashboardPassword ?? cfg.apiKey)) return errRes(401, 'Invalid dashboard password');
-  if (request.method === 'GET') return handleGet(cfg, url);
+  if (url.pathname === '/api/session' && request.method === 'GET') return handleSessionProbe(request, cfg);
+  if (url.pathname === '/api/login' && request.method === 'POST') return handleLogin(request, cfg, url);
+  if (url.pathname === '/api/logout' && request.method === 'POST') return handleLogout(url);
+  const auth = await authenticate(request, cfg);
+  if (!auth.ok) return auth.response;
+  const mutating = request.method !== 'GET' && request.method !== 'HEAD';
+  if (auth.via === 'cookie' && mutating && !sameOriginRequest(request, url)) return errRes(403, 'Cross-site request blocked');
+  if (url.pathname === '/api/events') return sseLoop(cfg);
+  if (request.method === 'GET') return handleGet(cfg, url, request);
   if (request.method === 'PUT') return handlePut(request, cfg, url);
   if (request.method === 'POST') return handlePost(request, cfg, url);
   if (request.method === 'DELETE') return handleDelete(request, cfg, url);

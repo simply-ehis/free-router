@@ -1,6 +1,7 @@
 // @body:organ=muscle type=provider role="Groq adapter: free rate-limited developer tier (OpenAI-compatible)"
 import { enabledKeyEntries } from '../config.mjs';
 import { mergeDiscovered } from '../discovery.mjs';
+import { listJsonModels } from './listing.mjs';
 
 export const id = 'groq';
 const DEFAULT_BASE = 'https://api.groq.com/openai/v1';
@@ -24,11 +25,12 @@ export function protocolOf() {
   return 'chat';
 }
 
-export async function listModelIds(cfg, { signal } = {}) {
-  const res = await fetch(`${base(cfg)}/models`, { signal: signal ?? AbortSignal.timeout(LIST_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`groq listModels HTTP ${res.status}`);
-  const json = await res.json();
-  return (json.data ?? []).map((m) => m.id).filter(Boolean);
+export async function listModels(cfg, { signal } = {}) {
+  return listJsonModels(`${base(cfg)}/models`, { signal, timeoutMs: LIST_TIMEOUT_MS, label: 'groq' });
+}
+
+export async function listModelIds(cfg, opts) {
+  return (await listModels(cfg, opts)).map((m) => m.id);
 }
 
 // Groq API keys are the rate-limited free developer tier by default; keys on

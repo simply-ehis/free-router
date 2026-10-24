@@ -102,7 +102,8 @@ test('dashboard css/js assets are served without auth and match their content ty
     ['/dashboard.js', /javascript/, 'renderSnapshot'],
     ['/dashboard-models.js', /javascript/, 'renderModels'],
     ['/dashboard-playground.js', /javascript/, 'pgStreamReply'],
-    ['/dashboard-pages.js', /javascript/, 'renderProviders'],
+    ['/dashboard-providers.js', /javascript/, 'renderProviders'],
+    ['/dashboard-security.js', /javascript/, 'renderSecurity'],
     ['/dashboard-analytics.js', /javascript/, 'renderUsage'],
     ['/dashboard-settings.js', /javascript/, 'loadSettings'],
   ]) {
@@ -292,7 +293,7 @@ test('routes demote/reinstate roundtrip', async () => {
 });
 
 test('SSE: snapshot on connect + live route events pushed', async () => {
-  const res = await fetch(`${base}/api/events?key=${encodeURIComponent(DASHBOARD_PASSWORD)}`);
+  const res = await fetch(`${base}/api/events`, { headers: { authorization: `Bearer ${DASHBOARD_PASSWORD}` } });
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /text\/event-stream/);
   const reader = res.body.getReader();

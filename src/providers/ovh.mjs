@@ -1,6 +1,7 @@
 // @body:organ=muscle type=provider role="OVHcloud AI Endpoints adapter: OpenAI-compatible, anonymous keyless tier (2 req/min per IP per model)"
 import { enabledKeyEntries } from '../config.mjs';
 import { mergeDiscovered } from '../discovery.mjs';
+import { listJsonModels } from './listing.mjs';
 
 export const id = 'ovh';
 const DEFAULT_BASE = 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1';
@@ -28,11 +29,12 @@ export function protocolOf() {
   return 'chat';
 }
 
-export async function listModelIds(cfg, { signal } = {}) {
-  const res = await fetch(`${base(cfg)}/models`, { signal: signal ?? AbortSignal.timeout(LIST_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`ovh listModels HTTP ${res.status}`);
-  const json = await res.json();
-  return (json.data ?? []).map((m) => m.id).filter(Boolean);
+export async function listModels(cfg, { signal } = {}) {
+  return listJsonModels(`${base(cfg)}/models`, { signal, timeoutMs: LIST_TIMEOUT_MS, label: 'ovh' });
+}
+
+export async function listModelIds(cfg, opts) {
+  return (await listModels(cfg, opts)).map((m) => m.id);
 }
 
 // OVH's anonymous tier serves its whole catalog free (rate-capped); an access

@@ -67,24 +67,45 @@ export function remoteIp(request) {
 
 // Baseline hardening headers for every response; CSP only where HTML is served.
 // Returns a plain header map to merge into any Response (node adapter included).
-export function securityHeaders({ isApi = false, isHtml = false } = {}) {
+// script-src is 'self' only: the dashboard has no inline scripts, so an injected
+// script tag or inline handler can never run.
+export function securityHeaders({ isApi = false, isHtml = false, secure = false } = {}) {
   const headers = {
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
+    'x-robots-tag': 'noindex, nofollow, noarchive',
+    'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+    'cross-origin-opener-policy': 'same-origin',
+    'cross-origin-resource-policy': 'same-origin',
   };
+  if (secure) headers['strict-transport-security'] = 'max-age=31536000; includeSubDomains';
   if (isApi) headers['cache-control'] = 'no-store';
   if (isHtml) {
     headers['content-security-policy'] =
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'";
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
     headers['x-frame-options'] = 'DENY';
+    headers['cache-control'] = 'no-store';
   }
   return headers;
+}
+
+// Plain-language findings the Security page shows. Nothing here blocks boot —
+// an old short password must keep working, it just gets flagged.
+export function securityWarnings(cfg) {
+  const out = [];
+  const password = cfg?.dashboardPassword ?? cfg?.apiKey ?? '';
+  if (password.length < 12) out.push('The dashboard password is shorter than 12 characters. Use a long random one (32+ characters).');
+  if (rateLimitPerMin(cfg) === 0) out.push('Rate limiting is off.');
+  return out;
 }
 
 export function securityState(cfg) {
   return {
     rateLimitPerMin: rateLimitPerMin(cfg),
     allowedIps: cfg?.security?.allowedIps ?? [],
+    sessionHours: cfg?.security?.sessionHours ?? 12,
+    maxLoginFailures: cfg?.security?.maxLoginFailures ?? 5,
+    warnings: securityWarnings(cfg),
   };
 }
 

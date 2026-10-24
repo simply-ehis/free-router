@@ -1,12 +1,22 @@
 // @body:organ=muscle type=compat role="custom openai-compat endpoints: parse/validate base URL, probe a not-yet-saved endpoint, add instance with encrypted worker credential persistence"
-import { COMPAT_CREDENTIALS_PATH, saveConfig } from './config.mjs';
+import { COMPAT_CREDENTIALS_PATH, saveConfigDurable } from './config.mjs';
 import { store } from './store.mjs';
 import { logger } from './util/log.mjs';
 import { isWorkerRuntime } from './runtime.mjs';
 import { hasCompatCredentialsKey, persistCompatCredentials } from './compatCredentials.mjs';
 
+function isPrivateHost(rawHost) {
+  const h = rawHost.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return true;
+  if (/^(127\.|10\.|0\.|169\.254\.|192\.168\.)/.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(h)) return true;
+  return h.includes(':') && (h === '::1' || h === '::' || /^f[cd]/.test(h) || h.startsWith('fe80'));
+}
+
 // Shared endpoint validation for add + probe: http(s) only, no embedded
-// credentials/query, bounded length.
+// credentials/query, bounded length. Your upstream key travels with every
+// request, so plain http is only accepted for local/private hosts, and a cloud
+// deployment refuses private hosts outright (it cannot reach them, and probing
+// them is how SSRF is done).
 export function parseCompatBaseUrl(value) {
   if (typeof value !== 'string' || !value.trim()) return { error: '`baseUrl` is required' };
   if (value.length > 2048) return { error: '`baseUrl` is too long' };
@@ -15,6 +25,9 @@ export function parseCompatBaseUrl(value) {
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
     return { error: '`baseUrl` must be an http(s) URL without credentials or query values' };
   }
+  const privateHost = isPrivateHost(url.hostname);
+  if (privateHost && isWorkerRuntime()) return { error: 'This router runs on Cloudflare and cannot reach local or private addresses — use a public https URL' };
+  if (url.protocol === 'http:' && !privateHost) return { error: 'Use https:// — your upstream key would travel in clear text over http' };
   return { url, base: url.href.replace(/\/+$/, '') };
 }
 
@@ -64,7 +77,7 @@ export async function addCompatInstance(cfg, body) {
     try { await persistCompatCredentials(provider.instances, store, COMPAT_CREDENTIALS_PATH); }
     catch (err) { provider.instances.pop(); logger.error('encrypted endpoint credential save failed', { error: err.message }); return { status: 503, error: 'Could not securely save this endpoint key to Cloudflare KV' }; }
   }
-  saveConfig(cfg);
+  await saveConfigDurable(cfg);
   return { instance: { name, prefix, baseUrl: instance.baseUrl } };
 }
 
@@ -82,7 +95,7 @@ export async function toggleCompatInstance(cfg, prefix, enabled) {
     try { await persistCompatCredentials(provider.instances, store, COMPAT_CREDENTIALS_PATH); }
     catch (err) { inst.enabled = !enabled; logger.error('encrypted endpoint credential update failed', { error: err.message }); return { status: 503, error: 'Could not update encrypted endpoint keys in Cloudflare KV' }; }
   }
-  saveConfig(cfg);
+  await saveConfigDurable(cfg);
   return { instance: { name: inst.name, prefix: inst.prefix, baseUrl: inst.baseUrl, enabled: inst.enabled !== false } };
 }
 
@@ -95,6 +108,6 @@ export async function removeCompatInstance(cfg, prefix) {
     try { await persistCompatCredentials(provider.instances, store, COMPAT_CREDENTIALS_PATH); }
     catch (err) { provider.instances = before; logger.error('encrypted endpoint credential removal failed', { error: err.message }); return { status: 503, error: 'Could not update encrypted endpoint keys in Cloudflare KV' }; }
   }
-  saveConfig(cfg);
+  await saveConfigDurable(cfg);
   return {};
 }

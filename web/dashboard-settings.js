@@ -1,46 +1,120 @@
-/* PURPOSE: Dashboard settings page — router name/pool/aliases + layer toggles. Served at /dashboard-settings.js */
-/* OWNS: everything behind the settings tab (loadSettings, aliases parsing, layers form submit) */
-/* READ-WHEN: editing settings; shared helpers ($/api/esc/load/lastSnapshot) come from dashboard.js */
-/* KEY-FILES: web/dashboard.html (DOM ids), web/dashboard.js (helpers/load), src/dashboard.mjs (config CRUD) */
-/* INVARIANTS: zero deps; esc() every interpolation; config writes go through PUT /api/config validation */
-/* GOTCHAS: dashboard.js is the loader — do not redeclare its globals; settings load on tab open, not per snapshot */
-/* UPDATED: 2026-10-14 */
+/* PURPOSE: Dashboard settings page — one form (routing, model filtering, layers, background checks) with unsaved-changes tracking, plus the scoring studio. Served at /dashboard-settings.js */
+/* OWNS: everything behind the settings tab (loadSettings, validation, dirty bar, alias parsing, scoring sliders) */
+/* READ-WHEN: editing settings; shared helpers ($/api/esc/toast/fail/lastSnapshot) come from dashboard.js */
+/* KEY-FILES: web/dashboard.html (DOM ids), web/dashboard.js (helpers), src/dashboard.mjs (PUT /api/config validates and persists) */
+/* INVARIANTS: esc() every interpolation; malformed lines are reported, never silently dropped; saving waits for the server's answer and then re-reads the stored config, so the form always shows what is really saved */
+/* GOTCHAS: settings load on tab open, not per snapshot — typing must not be overwritten every 2s; leaving with unsaved changes asks first */
+/* UPDATED: 2026-10-22 */
 'use strict';
+
+let settingsDirty = false;
+let settingsBaseline = null;
 
 function aliasesToText(aliases) {
   return Object.entries(aliases || {}).map(([alias, target]) => `${alias} = ${target}`).join('\n');
 }
 
-function textToAliases(text) {
-  const out = {};
+// Returns { aliases, bad } — bad lists lines that could not be understood.
+function parseAliases(text) {
+  const aliases = {};
+  const bad = [];
   for (const line of String(text || '').split('\n')) {
-    const m = /^\s*([A-Za-z0-9][A-Za-z0-9._-]{0,63})\s*=\s*(.+?)\s*$/.exec(line);
-    if (m) out[m[1]] = m[2];
+    if (!line.trim()) continue;
+    const m = /^\s*([A-Za-z0-9][A-Za-z0-9._-]{0,63})\s*=\s*(\S.*?)\s*$/.exec(line);
+    if (m) aliases[m[1]] = m[2]; else bad.push(line.trim());
   }
-  return out;
+  return { aliases, bad };
+}
+
+function lines(text) {
+  return [...new Set(String(text || '').split(/[\n,]+/).map((x) => x.trim()).filter(Boolean))];
+}
+
+function markDirty(dirty) {
+  settingsDirty = dirty;
+  $('saveBar').classList.toggle('dirty', dirty);
+  $('settingsMsg').className = dirty ? '' : 'ok-msg';
+  if (dirty) $('settingsMsg').textContent = 'You have unsaved changes.';
+}
+
+function fillSettings(cfg) {
+  $('setName').value = cfg.name ?? '';
+  $('setPool').value = cfg.selection?.pool ?? 'all';
+  $('setDefaultModel').value = cfg.selection?.defaultModel ?? '';
+  $('setAliases').value = aliasesToText(cfg.selection?.aliases);
+  $('setForceChat').value = (cfg.selection?.forceChat || []).join('\n');
+  $('setStealth').checked = cfg.stealth?.enabled === true;
+  $('setStealthAlias').value = cfg.stealth?.alias ?? '';
+  $('setScrub').checked = cfg.stealth?.scrubContent === true;
+  $('setPersona').checked = cfg.persona?.enabled === true;
+  $('setDecision').checked = cfg.decision?.enabled === true;
+  $('setCompaction').value = cfg.compaction?.strategy ?? 'summarize';
+  $('setCatalogMinutes').value = cfg.refresh?.catalogMinutes ?? 10;
+  $('setProbeSec').value = Math.round((cfg.probe?.intervalMs ?? 120000) / 1000);
+  $('setStandby').value = cfg.probe?.standbyWarm ?? 2;
+  $('setSweepMin').value = Math.round((cfg.probe?.sweepIntervalMs ?? 3600000) / 60000);
+  settingsBaseline = cfg;
+  markDirty(false);
 }
 
 async function loadSettings() {
+  if (settingsDirty) return; // never overwrite edits in progress
   try {
-    const cfg = await api('/api/config');
-    $('setName').value = cfg.name ?? '';
-    $('setPool').value = cfg.selection?.pool ?? 'all';
-    $('setDefaultModel').value = cfg.selection?.defaultModel ?? '';
-    $('setAliases').value = aliasesToText(cfg.selection?.aliases);
-    $('setStealth').checked = cfg.stealth?.enabled === true;
-    $('setStealthAlias').value = cfg.stealth?.alias ?? '';
-    $('setScrub').checked = cfg.stealth?.scrubContent === true;
-    $('setPersona').checked = cfg.persona?.enabled === true;
-    $('setDecision').checked = cfg.decision?.enabled === true;
-    $('setCompaction').value = cfg.compaction?.strategy ?? 'summarize';
-    $('setCatalogMinutes').value = cfg.refresh?.catalogMinutes ?? 10;
-    $('setProbeMs').value = cfg.probe?.intervalMs ?? 120000;
-    $('setStandby').value = cfg.probe?.standbyWarm ?? 2;
-    const ids = [...new Set((lastSnapshot?.modelsDetail || []).map((m) => m.id))].sort();
-    $('modelIds').innerHTML = ids.map((id) => `<option value="${esc(id)}"></option>`).join('');
-  } catch (err) { $('settingsMsg').textContent = err.message; }
+    fillSettings(await api('/api/config'));
+    $('settingsMsg').textContent = '';
+  } catch (err) { if (err.message !== 'Sign in required') { $('settingsMsg').className = 'err'; $('settingsMsg').textContent = err.message; } }
   loadScoring().catch((err) => { $('weightsMsg').textContent = err.message; });
 }
+
+function intField(id, label, { min, max }) {
+  const raw = $(id).value.trim();
+  const n = Number(raw);
+  if (raw === '' || !Number.isFinite(n) || !Number.isInteger(n)) throw new Error(`${label} must be a whole number.`);
+  if (n < min || (max != null && n > max)) throw new Error(`${label} must be ${max != null ? `between ${min} and ${max}` : `at least ${min}`}.`);
+  return n;
+}
+
+function buildPatch() {
+  const { aliases, bad } = parseAliases($('setAliases').value);
+  if (bad.length) throw new Error(`These alias lines are not in "alias = model-id" form: ${bad.slice(0, 3).join('; ')}`);
+  return {
+    name: $('setName').value.trim() || 'free-router',
+    selection: { pool: $('setPool').value, defaultModel: $('setDefaultModel').value.trim(), aliases, forceChat: lines($('setForceChat').value) },
+    stealth: { enabled: $('setStealth').checked, alias: $('setStealthAlias').value.trim() || 'cloud-1', scrubContent: $('setScrub').checked },
+    persona: { enabled: $('setPersona').checked },
+    decision: { enabled: $('setDecision').checked },
+    compaction: { strategy: $('setCompaction').value },
+    refresh: { catalogMinutes: intField('setCatalogMinutes', 'Catalog refresh', { min: 1 }) },
+    probe: {
+      intervalMs: intField('setProbeSec', 'Check interval', { min: 1 }) * 1000,
+      standbyWarm: intField('setStandby', 'Standby models', { min: 0, max: 10 }),
+      sweepIntervalMs: intField('setSweepMin', 'Full model test interval', { min: 1 }) * 60000,
+    },
+  };
+}
+
+$('settingsForm').addEventListener('input', () => markDirty(true));
+$('settingsForm').addEventListener('change', () => markDirty(true));
+$('settingsRevert').onclick = () => { if (settingsBaseline) fillSettings(settingsBaseline); };
+window.addEventListener('beforeunload', (e) => { if (settingsDirty) { e.preventDefault(); e.returnValue = ''; } });
+
+$('settingsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('settingsMsg').className = 'err';
+  $('settingsMsg').textContent = '';
+  let patch;
+  try { patch = buildPatch(); } catch (err) { $('settingsMsg').textContent = err.message; return; }
+  $('settingsSave').disabled = true;
+  try {
+    await api('/api/config', { method: 'PUT', body: JSON.stringify(patch) });
+    fillSettings(await api('/api/config')); // show what the server really stored
+    $('settingsMsg').className = 'ok-msg';
+    $('settingsMsg').textContent = 'Saved. The pool was refreshed with your changes.';
+    toast('Settings saved');
+    await load();
+  } catch (err) { $('settingsMsg').textContent = err.message; }
+  finally { $('settingsSave').disabled = false; }
+});
 
 // ---------- scoring studio ----------
 const WEIGHT_HELP = {
@@ -115,27 +189,3 @@ $('weightsReset').onclick = () => {
   renderWeightsPreview();
 };
 
-$('layersForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  $('settingsMsg').textContent = '';
-  const patch = {
-    name: $('setName').value.trim() || 'free-router',
-    selection: {
-      pool: $('setPool').value,
-      defaultModel: $('setDefaultModel').value.trim(),
-      aliases: textToAliases($('setAliases').value),
-    },
-    stealth: { enabled: $('setStealth').checked, alias: $('setStealthAlias').value.trim() || 'cloud-1', scrubContent: $('setScrub').checked },
-    persona: { enabled: $('setPersona').checked },
-    decision: { enabled: $('setDecision').checked },
-    compaction: { strategy: $('setCompaction').value },
-    refresh: { catalogMinutes: Number($('setCatalogMinutes').value) || 10 },
-    probe: { intervalMs: Number($('setProbeMs').value) || 120000, standbyWarm: Number($('setStandby').value) || 0 },
-  };
-  try {
-    await api('/api/config', { method: 'PUT', body: JSON.stringify(patch) });
-    $('settingsMsg').textContent = 'saved ✓';
-    setTimeout(() => { if ($('settingsMsg').textContent === 'saved ✓') $('settingsMsg').textContent = ''; }, 4000);
-    await load();
-  } catch (err) { $('settingsMsg').textContent = 'Error → ' + err.message; }
-});

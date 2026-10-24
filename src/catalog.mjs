@@ -3,41 +3,25 @@ import path from 'node:path';
 import { ROOT } from './config.mjs';
 import { store } from './store.mjs';
 import { logger } from './util/log.mjs';
-import { registry, byId } from './providers/index.mjs';
+import { registry } from './providers/index.mjs';
+import { classifyModel } from './modality.mjs';
+
+const MAX_FILTERED = 400;
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';
 const CACHE_PATH = path.join(ROOT, '.cache', 'models-dev-free.json');
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-// Model ID patterns that indicate non-text/chat models. These are excluded
-// from the catalog so clients only see text-completion-capable models.
-// Match is case-insensitive on the model id.
-const NON_TEXT_PATTERNS = [
-  // Image generation / vision-only
-  /dall-e/, /midjourney/, /stable.?diffusion/, /sdxl/, /flux/, /imagen/,
-  /image.?gen/, /image.?generation/, /generative.?image/, /text.?to.?image/,
-  // Audio / TTS / STT / voice
-  /tts/, /text.?to.?speech/, /speech.?to.?text/, /whisper/, /elevenlabs/,
-  /voice.?gen/, /audio.?gen/, /transcribe/, /transcription/,
-  // Video generation
-  /video.?gen/, /sora/, /runway/, /pika/, /luma/, /text.?to.?video/,
-  // Embeddings
-  /embedding/, /embed/, /bge/, /e5[-/]/, /gte[-/]/, /text.?embedding/,
-  // Moderation / safety
-  /moderation/,
-  // Batch API variants (not chat completions)
-  /:batch$/,
-];
-
-function isTextModel(modelId) {
-  const lower = modelId.toLowerCase();
-  return !NON_TEXT_PATTERNS.some((re) => re.test(lower));
+// Text-only gate. Provider metadata (output modalities, capabilities) decides
+// when it exists; token-aware name rules cover providers that only send ids.
+export function isTextModel(modelId, meta = null) {
+  return classifyModel(modelId, meta).chat;
 }
-export { isTextModel };
 
 const state = {
   models: new Map(), // id -> { id, provider, protocol, sources[], addedAt }
-  demoted: new Map(), // id -> { reason, at }
+  demoted: new Map(), // id -> { reason, at, until? }
+  filtered: new Map(), // id -> { id, provider, kind, reason } — listed upstream but not a chat model
   lastRefresh: null,
   refreshOk: false,
   modelsDevOk: false,
@@ -88,6 +72,10 @@ async function loadFreeTable() {
   }
 }
 
+function expireDemotions(now = Date.now()) {
+  for (const [id, d] of state.demoted) if (d.until && d.until <= now) state.demoted.delete(id);
+}
+
 export async function refresh(cfg) {
   const freeTable = await loadFreeTable();
   // pool: 'all' (default) surfaces every model a keyed provider lists; 'free'
@@ -95,7 +83,10 @@ export async function refresh(cfg) {
   // safety net either way — a paid model on a free key 402s and drops out.
   const poolMode = cfg?.selection?.pool === 'free' ? 'free' : 'all';
   const blacklisted = new Set(cfg?.selection?.blacklist ?? []);
+  const forceChat = new Set(cfg?.selection?.forceChat ?? []);
+  expireDemotions();
   const found = new Map();
+  const filtered = new Map();
   const errors = [];
   for (const provider of registry) {
     if (!provider.isEnabled?.(cfg)) continue;
@@ -103,10 +94,18 @@ export async function refresh(cfg) {
     // keyless public routes (openrouter /models) never pollute the pool.
     if ((provider.listCredentials?.(cfg)?.length ?? 0) === 0) continue;
     try {
-      const ids = await provider.listModelIds(cfg);
-      for (const modelId of ids) {
+      const rows = typeof provider.listModels === 'function'
+        ? await provider.listModels(cfg)
+        : (await provider.listModelIds(cfg)).map((id) => ({ id, meta: null }));
+      for (const { id: modelId, meta } of rows) {
         if (blacklisted.has(modelId)) continue;
-        if (!isTextModel(modelId)) continue;
+        const kind = forceChat.has(modelId)
+          ? { kind: 'chat', chat: true, reason: 'allowed as chat by you', source: 'override' }
+          : classifyModel(modelId, meta);
+        if (!kind.chat) {
+          if (filtered.size < MAX_FILTERED) filtered.set(modelId, { id: modelId, provider: provider.id, kind: kind.kind, reason: kind.reason });
+          continue;
+        }
         const sources = provider.freeSources?.(modelId, freeTable) ?? [];
         if (poolMode === 'free' && sources.length === 0) continue;
         if (state.demoted.has(modelId)) continue;
@@ -114,6 +113,8 @@ export async function refresh(cfg) {
           id: modelId,
           provider: provider.id,
           protocol: provider.protocolOf?.(modelId) ?? 'chat',
+          kind: kind.kind,
+          kindSource: kind.source,
           sources,
           addedAt: state.models.get(modelId)?.addedAt ?? Date.now(),
         });
@@ -125,11 +126,13 @@ export async function refresh(cfg) {
   }
   if (found.size > 0) {
     state.models = found;
+    state.filtered = filtered;
     state.refreshOk = true;
   } else if (errors.length === 0) {
     // No models found and no errors — all providers were skipped (no credentials)
     // or returned empty lists. Clear the catalog rather than keeping stale data.
     state.models = new Map();
+    state.filtered = filtered;
     state.refreshOk = true;
   } else {
     // Keep the previous catalog on partial failure — a flaky listing must not empty the pool.
@@ -140,6 +143,7 @@ export async function refresh(cfg) {
   logger.info('catalog refreshed', {
     pool: poolMode,
     models: state.models.size,
+    filteredNonChat: state.filtered.size,
     systemone: [...state.models.values()].filter((m) => m.protocol === 'systemone').length,
     demoted: state.demoted.size,
     modelsDevOk: state.modelsDevOk,
@@ -147,8 +151,10 @@ export async function refresh(cfg) {
 }
 
 // Free-guard: any billing signal removes the model from the pool instantly.
-export function demote(modelId, reason) {
-  state.demoted.set(modelId, { reason, at: Date.now() });
+// ttlMs: soft demotions (sweep findings that may be a flaky listing or a bad
+// ping body) heal themselves; billing demotions stay until a manual reinstate.
+export function demote(modelId, reason, { ttlMs = 0 } = {}) {
+  state.demoted.set(modelId, { reason, at: Date.now(), ...(ttlMs > 0 ? { until: Date.now() + ttlMs } : {}) });
   state.models.delete(modelId);
   logger.warn('model demoted (runtime)', { modelId, reason });
 }
@@ -170,6 +176,7 @@ export function getState() {
   return {
     models: [...state.models.values()],
     demoted: Object.fromEntries(state.demoted),
+    filtered: [...state.filtered.values()],
     lastRefresh: state.lastRefresh,
     refreshOk: state.refreshOk,
     modelsDevOk: state.modelsDevOk,

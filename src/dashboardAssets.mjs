@@ -10,7 +10,8 @@ const ASSETS = {
   '/dashboard.js': { file: 'dashboard.js', type: 'text/javascript; charset=utf-8' },
   '/dashboard-models.js': { file: 'dashboard-models.js', type: 'text/javascript; charset=utf-8' },
   '/dashboard-playground.js': { file: 'dashboard-playground.js', type: 'text/javascript; charset=utf-8' },
-  '/dashboard-pages.js': { file: 'dashboard-pages.js', type: 'text/javascript; charset=utf-8' },
+  '/dashboard-providers.js': { file: 'dashboard-providers.js', type: 'text/javascript; charset=utf-8' },
+  '/dashboard-security.js': { file: 'dashboard-security.js', type: 'text/javascript; charset=utf-8' },
   '/dashboard-analytics.js': { file: 'dashboard-analytics.js', type: 'text/javascript; charset=utf-8' },
   '/dashboard-settings.js': { file: 'dashboard-settings.js', type: 'text/javascript; charset=utf-8' },
 };

@@ -78,6 +78,10 @@ function scheduleFlush() {
   if (typeof state.timer?.unref === 'function') state.timer.unref();
 }
 
+export function isDirty() {
+  return state.dirty;
+}
+
 export function flush() {
   if (!state.dirty) return;
   state.dirty = false;
