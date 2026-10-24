@@ -10,6 +10,7 @@ try { modelPrefs.freeOnly = localStorage.getItem('fr_free_only') === '1'; } catc
 const expandedModels = new Set();
 const testingModels = new Set();
 let verifyCancel = false;
+const selectedModels = new Set();
 let verifyRunning = false;
 
 const STATUS_RANK = { working: 0, limited: 1, untested: 2, cooldown: 3, failing: 4 };
@@ -241,6 +242,11 @@ document.querySelector('[data-page="models"]').addEventListener('click', (e) => 
   if (btn) modelAction(btn.dataset.act, btn.dataset.model);
 });
 document.querySelector('[data-page="models"]').addEventListener('change', async (e) => {
+  const cb = e.target.closest('input[data-sel-model]');
+  if (cb) {
+    if (cb.checked) selectedModels.add(cb.dataset.selModel); else selectedModels.delete(cb.dataset.selModel);
+    return;
+  }
   const field = e.target.closest('select[data-priority-model]');
   if (!field) return;
   try { renderSnapshot(await api('/api/models/priority', { method: 'POST', body: JSON.stringify({ modelId: field.dataset.priorityModel, priority: Number(field.value) }) })); toast('Priority saved'); }

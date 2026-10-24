@@ -64,6 +64,8 @@ const ENV_KEY_VARS = {
   qwen: ['FREE_ROUTER_QWEN_KEYS', 'QWEN_API_KEY', 'DASHSCOPE_API_KEY'],
   kluster: ['FREE_ROUTER_KLUSTER_KEYS', 'KLUSTER_API_KEY'],
   huggingface: ['FREE_ROUTER_HF_KEYS', 'HF_TOKEN', 'HUGGINGFACE_API_KEY'],
+  nous: ['FREE_ROUTER_NOUS_KEYS', 'NOUS_API_KEY'],
+  cloudflare: ['FREE_ROUTER_CLOUDFLARE_KEYS', 'CLOUDFLARE_API_TOKEN', 'CF_API_TOKEN'],
 };
 
 function applyEnvKeys(cfg, env = process.env) {

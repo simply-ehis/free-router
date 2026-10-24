@@ -1,6 +1,6 @@
 // @body:organ=face type=dashboard role="scoring studio: weight validation + per-model score breakdown from live catalog/routes state; single math path shared with the smartest strategy"
 import { getState as getCatalog } from './catalog.mjs';
-import { getRoutesState } from './routes.mjs';
+import { getRoutesState, modelStatus } from './routes.mjs';
 import { scoreBreakdown, DEFAULT_WEIGHTS, SCORE_COMPONENTS } from './strategies/index.mjs';
 import { saveConfig } from './config.mjs';
 
@@ -15,6 +15,7 @@ export function scoringSnapshot(cfg) {
     return {
       id: m.id,
       provider: m.provider,
+      status: modelStatus(m.id),
       score: Math.round(b.score * 100),
       components: Object.fromEntries(Object.entries(b.components).map(([k, v]) => [k, round2(v)])),
       weights: b.weights,

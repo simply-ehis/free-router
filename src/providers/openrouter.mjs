@@ -30,7 +30,9 @@ export function protocolOf() {
 }
 
 export async function listModels(cfg, { signal } = {}) {
-  const rows = await listJsonModels(`${base(cfg)}/models`, { signal, timeoutMs: LIST_TIMEOUT_MS, label: 'openrouter' });
+  const cred = listCredentials(cfg)[0];
+  const headers = cred ? { authorization: `Bearer ${cred.key}` } : {};
+  const rows = await listJsonModels(`${base(cfg)}/models`, { signal, timeoutMs: LIST_TIMEOUT_MS, label: 'openrouter', headers });
   zeroPriced = new Set();
   for (const { id: modelId, meta } of rows) {
     const p = meta.pricing;

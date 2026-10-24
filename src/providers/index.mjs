@@ -15,6 +15,8 @@ import * as nvidia from './nvidia.mjs';
 import * as qwen from './qwen.mjs';
 import * as kluster from './kluster.mjs';
 import * as huggingface from './huggingface.mjs';
+import * as nous from './nous.mjs';
+import * as cloudflare from './cloudflare.mjs';
 
-export const registry = [zen, openrouter, groq, gemini, cerebras, sambanova, mistral, openaiCompat, kilo, ovh, llm7, zai, nvidia, qwen, kluster, huggingface];
+export const registry = [zen, openrouter, groq, gemini, cerebras, sambanova, mistral, openaiCompat, kilo, ovh, llm7, zai, nvidia, qwen, kluster, huggingface, nous, cloudflare];
 export const byId = Object.fromEntries(registry.map((p) => [p.id, p]));

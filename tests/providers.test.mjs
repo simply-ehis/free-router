@@ -103,8 +103,8 @@ function makeCfg() {
 
 test('setup: adapters registered in the nerve; ids unique', async () => {
   await startMocks();
-  assert.deepEqual(registry.map((p) => p.id), ['zen', 'openrouter', 'groq', 'gemini', 'cerebras', 'sambanova', 'mistral', 'openai-compat', 'kilo', 'ovh', 'llm7', 'zai', 'nvidia', 'qwen', 'kluster', 'huggingface']);
-  assert.equal(new Set(registry.map((p) => p.id)).size, 16);
+  assert.deepEqual(registry.map((p) => p.id), ['zen', 'openrouter', 'groq', 'gemini', 'cerebras', 'sambanova', 'mistral', 'openai-compat', 'kilo', 'ovh', 'llm7', 'zai', 'nvidia', 'qwen', 'kluster', 'huggingface', 'nous', 'cloudflare']);
+  assert.equal(new Set(registry.map((p) => p.id)).size, 18);
 });
 
 test('enabled:false or missing keys → zero usable credentials', () => {

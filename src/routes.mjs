@@ -83,6 +83,21 @@ export function revive(modelId) {
   e.throttleLevel = 0;
 }
 
+export function modelStatus(id, now = Date.now()) {
+  const e = state.models.get(id);
+  if (!e) return 'untested';
+  const recentOk = (e.recent ?? []).filter((x) => x === 1).length;
+  const recentFail = (e.recent ?? []).filter((x) => x === 0).length;
+  const ok = (e.ok ?? 0) + recentOk;
+  const fail = (e.fail ?? 0) + recentFail;
+  if (now < e.unhealthyUntil) return 'failed';
+  if (now < e.throttledUntil) return 'rate-limited';
+  if (ok > 0 && fail === 0) return 'working';
+  if (fail > 0 && ok === 0) return 'failed';
+  if (ok > 0 && fail > 0) return 'degraded';
+  return 'untested';
+}
+
 export function getRoutesState() {
   return {
     models: [...state.models].map(([id, s]) => ({ id, ...s })),

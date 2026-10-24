@@ -33,6 +33,8 @@
     "qwen": { "enabled": true, "keys": [], "baseUrl": "" },
     "kluster": { "enabled": true, "keys": [], "baseUrl": "" },
     "huggingface": { "enabled": true, "keys": [], "baseUrl": "" },
+    "nous": { "enabled": true, "keys": [], "baseUrl": "" },
+    "cloudflare": { "enabled": false, "accountId": "", "keys": [], "baseUrl": "" },
     "openai-compat": {
       "enabled": false,
       "instances": []
