@@ -15,7 +15,7 @@
     "aliases": {},
     "timeboxMs": 700,
     "attemptTimeoutMs": 60000,
-    "pool": "free"
+    "pool": "all"
   },
   "providers": {
     "zen": { "enabled": true, "importOpencodeAuth": true, "keys": [], "baseUrl": "" },
