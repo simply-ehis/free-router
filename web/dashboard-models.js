@@ -76,7 +76,7 @@ function modelRow(m, s) {
   const open = expandedModels.has(m.id);
   const testing = testingModels.has(m.id);
   const ms = m.checkMs ?? m.latencyMs;
-  return `<li class="mrow" data-id="${esc(m.id)}"><span class="state ${m.health}" title="${STATUS_LABEL[m.health]}"></span>
+  return `<li class="mrow" data-id="${esc(m.id)}"><input type="checkbox" data-sel-model="${esc(m.id)}" ${selectedModels.has(m.id) ? 'checked' : ''} aria-label="Select ${esc(m.id)}"><span class="state ${m.health}" title="${STATUS_LABEL[m.health]}"></span>
     <div class="mname"><code>${esc(m.id)}</code><span class="muted">${esc(providerName(m.provider))}</span>${free}${pinned}</div>
     <div class="mstat"><span class="stlabel ${m.health}">${STATUS_LABEL[m.health]}</span>${strip(m.recent)}</div>
     <div class="mms" title="Response time">${ms ? Math.round(ms) + ' ms' : ''}</div><div class="mscore" title="Score">${m.score}</div>
@@ -232,6 +232,14 @@ $('verifyShownBtn').onclick = () => {
   if (!lastSnapshot) return;
   const ids = sortModels(baseFiltered(lastSnapshot).filter(matchesStatus)).map((m) => m.id);
   testModels(ids);
+};
+$('testSelectedBtn').onclick = () => {
+  if (selectedModels.size === 0) { toast('No models selected', 'bad'); return; }
+  testModels([...selectedModels]);
+};
+$('clearSelectedBtn').onclick = () => {
+  selectedModels.clear();
+  if (lastSnapshot) renderModels(lastSnapshot);
 };
 $('statusChips').addEventListener('click', (e) => {
   const chip = e.target.closest('button[data-chip]');
