@@ -165,7 +165,7 @@ test('bootConfig: empty KV → boots from env and persists config (secrets strip
   const parsed = JSON.parse(kv.data.get(persisted));
   assert.equal(parsed.dashboardPassword, undefined, 'dashboard password NOT persisted to KV');
   assert.equal(parsed.apiKey, undefined, 'legacy API key NOT persisted to KV');
-  assert.equal(parsed.providers.zen.keys, undefined, 'provider keys NOT persisted to KV');
+  assert.deepEqual(parsed.providers.zen.keys, ['zk-boot-000001'], 'provider keys persist (plain fallback when no secret)');
   assert.equal(parsed.name, 'Cloud', 'non-secret config persisted');
 });
 

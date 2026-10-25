@@ -134,23 +134,20 @@ test('worker keys: toggle persists enabled:false across recycle', async () => {
 
 // ---------- guards and rollback ----------
 
-test('worker keys: without COMPAT_CREDENTIALS_KEY mutations are refused with 503 and cfg unchanged', async () => {
+test('worker keys: without COMPAT_CREDENTIALS_KEY mutations succeed via plain config fallback', async () => {
   const env = { GATEWAY_KEY: 'cloud-no-secret-test', FREE_ROUTER_GROQ_KEYS: 'gk-stub-000001' };
-  const { cfg } = await bootConfig(env, fakeKv());
+  const kv = fakeKv();
+  const { cfg } = await bootConfig(env, kv);
   setRuntimePlatform('worker');
   try {
-    for (const out of [
-      await addKeys(cfg, 'groq', ['gk-real-000002']),
-      await removeKey(cfg, 'groq', 'groq-1'),
-      await toggleKey(cfg, 'groq', 'groq-1', false),
-    ]) {
-      assert.equal(out.status, 503);
-      assert.ok(out.error.includes('COMPAT_CREDENTIALS_KEY'));
-    }
-    assert.deepEqual(cfg.providers.groq.keys, ['gk-stub-000001'], 'refusal leaves cfg untouched');
+    const out = await addKeys(cfg, 'groq', ['gk-real-000002']);
+    assert.equal(out.error, undefined);
+    assert.equal(out.keys, 2);
   } finally {
     setRuntimePlatform('node');
   }
+  const { cfg: second } = await bootConfig(env, kv);
+  assert.deepEqual(second.providers.groq.keys.map((e) => (typeof e === 'string' ? e : e.key)), ['gk-stub-000001', 'gk-real-000002']);
 });
 
 test('worker keys: KV write failure → 503 and in-memory rollback', async () => {

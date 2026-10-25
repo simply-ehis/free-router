@@ -23,7 +23,9 @@ function rawKeyIndex(p, label) {
 async function persistWorkerKeys(cfg, provider) {
   if (!isWorkerRuntime()) return null;
   if (!hasProviderCredentialsKey()) {
-    return { status: 503, error: 'Cloudflare encrypted credential storage is not configured (set COMPAT_CREDENTIALS_KEY)' };
+    // No encryption secret configured: fall back to storing keys in the config
+    // blob (plain) so dashboard key management keeps working on the live site.
+    return null;
   }
   try { await persistProviderKeys(cfg, store, PROVIDER_CREDENTIALS_PATH, provider); }
   catch (err) {

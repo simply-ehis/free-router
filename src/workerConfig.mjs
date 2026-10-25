@@ -2,7 +2,7 @@
 import { deepMerge, validateConfig, applyEnvKeys, CONFIG_PATH, API_KEYS_PATH, COMPAT_CREDENTIALS_PATH, PROVIDER_CREDENTIALS_PATH } from './config.mjs';
 import { setStore } from './store.mjs';
 import { configureCompatCredentials, decryptCompatCredentials } from './compatCredentials.mjs';
-import { configureProviderCredentials, decryptProviderKeys } from './providerCredentials.mjs';
+import { configureProviderCredentials, decryptProviderKeys, hasProviderCredentialsKey } from './providerCredentials.mjs';
 import { logger } from './util/log.mjs';
 import example from '../config.example.json' with { type: 'json' };
 
@@ -20,9 +20,11 @@ function stripSecrets(cfg) {
   delete out.dashboardPassword;
   delete out.apiKey;
   delete out.apiKeys;
-  for (const p of Object.values(out.providers ?? {})) delete p.keys;
+  if (hasProviderCredentialsKey()) {
+    for (const p of Object.values(out.providers ?? {})) delete p.keys;
+  }
   const compat = out.providers?.['openai-compat'];
-  if (compat) for (const inst of compat.instances ?? []) delete inst.apiKey;
+  if (compat && hasProviderCredentialsKey()) for (const inst of compat.instances ?? []) delete inst.apiKey;
   return out;
 }
 
@@ -52,7 +54,10 @@ export function buildConfig(env) {
 
 function sanitizeForKv(p, text) {
   if (p !== CONFIG_PATH) return text;
-  return JSON.stringify(stripSecrets(JSON.parse(text)), null, 2);
+  if (hasProviderCredentialsKey()) return JSON.stringify(stripSecrets(JSON.parse(text)), null, 2);
+  // No encryption secret: keep provider keys in the config blob so dashboard
+  // management works on the live site (less secure, but functional).
+  return text;
 }
 
 function newRev() {
